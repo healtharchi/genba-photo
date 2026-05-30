@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="現場写真" />
+<meta name="theme-color" content="#0f2a43" />
+<title>HEALTH ARCHI 現場写真</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: { navy:'#0f2a43', navy2:'#16395c', navy3:'#1f4a73', amber:'#ffb81c', amber2:'#e6a200', ok:'#22c55e' },
+      fontFamily: { sans:['"Hiragino Kaku Gothic ProN"','"Yu Gothic"','"Meiryo"','system-ui','sans-serif'] }
+    }}
+  }
+</script>
+<style>
+  html,body,#root{height:100%;}
+  body{background:#0f2a43;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;
+    padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);}
+  .tap{transition:transform .08s ease, background .15s ease, opacity .15s;}
+  .tap:active{transform:scale(.95);}
+  @keyframes pop{0%{transform:scale(.7);opacity:0}60%{transform:scale(1.05)}100%{transform:scale(1);opacity:1}}
+  .pop{animation:pop .25s ease}
+  @keyframes flash{0%{opacity:.0}30%{opacity:.85}100%{opacity:0}}
+  .flash{animation:flash .35s ease}
+  .scroll-x{-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .scroll-x::-webkit-scrollbar{display:none}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ===== 工種テンプレ（建設標準・最初から内蔵） ===== */
+const WORK_TYPES = ['基礎','配筋','型枠','躯体','設備','内装','外構','完了'];
+
+/* ===== 保存（IndexedDB=端末内の大容量保管庫・外部送信なし） ===== */
+const DB='ha_genba2', STORE='photos', VER=1;
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB,VER);
+  r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains(STORE)){db.createObjectStore(STORE,{keyPath:'id'});}};
+  r.onsuccess=e=>res(e.target.result);r.onerror=e=>rej(e.target.error);});}
+async function dbPut(rec){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).put(rec);t.oncomplete=res;t.onerror=e=>rej(e.target.error);});}
+async function dbAll(){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction(STORE,'readonly');const q=t.objectStore(STORE).getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=e=>rej(e.target.error);});}
+async function dbDel(id){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).delete(id);t.oncomplete=res;t.onerror=e=>rej(e.target.error);});}
+
+/* 現場名は設定（localStorage=軽量保存） */
+const LS_SITES='ha2_sites', LS_LAST='ha2_last';
+const loadSites=()=>{try{return JSON.parse(localStorage.getItem(LS_SITES))||[];}catch(e){return[];}};
+const saveSites=a=>localStorage.setItem(LS_SITES,JSON.stringify(a));
+
+/* 画像縮小（保存容量を抑える・端末が重くならないように） */
+function shrink(file,max=1600){return new Promise(res=>{const img=new Image();
+  img.onload=()=>{let w=img.width,h=img.height;if(Math.max(w,h)>max){const r=max/Math.max(w,h);w=Math.round(w*r);h=Math.round(h*r);}
+    const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);res(c.toDataURL('image/jpeg',0.82));};
+  img.src=URL.createObjectURL(file);});}
+
+const p2=n=>String(n).padStart(2,'0');
+const p3=n=>String(n).padStart(3,'0');
+const ymd=ts=>{const d=new Date(ts);return ''+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate());};
+const hm=ts=>{const d=new Date(ts);return p2(d.getHours())+':'+p2(d.getMinutes());};
+
+/* data:URL → Blob（カメラロール書き出し用） */
+function dataURLtoBlob(durl){const a=durl.split(',');const mime=a[0].match(/:(.*?);/)[1];const bin=atob(a[1]);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:mime});}
+
+/* ============ 撮影画面（連写・ノールック） ============ */
+function Capture({sites,site,setSite,wt,setWt,onShot,todayCount}){
+  const fileRef=useRef();
+  const [flash,setFlash]=useState(false);
+  const [busy,setBusy]=useState(false);
+
+  const onPick=async e=>{
+    const files=[].slice.call(e.target.files||[]);
+    if(!files.length)return;
+    setBusy(true);
+    for(const f of files){
+      const data=await shrink(f);
+      await dbPut({id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),site,wt,ts:Date.now(),img:data,exported:false});
+      await onShot();
+    }
+    setFlash(true);setTimeout(()=>setFlash(false),350);
+    e.target.value='';
+    setBusy(false);
+  };
+
+  if(!sites.length){
+    return <div className="flex flex-col items-center justify-center h-full px-8 text-center">
+      <div className="text-6xl mb-4">🏗️</div>
+      <p className="text-white font-bold text-lg mb-2">まず現場を1つ登録しましょう</p>
+      <p className="text-white/60 text-sm mb-6">下の「現場」タブで現場名を追加すると、撮影が始められます。</p>
+    </div>;
+  }
+
+  return (
+    <div className="flex flex-col h-full select-none">
+      {flash && <div className="flash fixed inset-0 bg-white z-50 pointer-events-none"/>}
+
+      <div className="px-4 pt-3">
+        <div className="text-white/50 text-[11px] font-bold mb-1">いま撮ると、ここに入ります</div>
+        <div className="bg-navy2 rounded-2xl px-4 py-3 border border-white/10">
+          <div className="flex items-center gap-2">
+            <span className="text-amber text-lg">📍</span>
+            <select value={site} onChange={e=>setSite(e.target.value)}
+              className="flex-1 bg-transparent text-white text-lg font-bold appearance-none outline-none">
+              {sites.map(s=><option key={s} value={s} className="text-black">{s}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="pt-3">
+        <div className="px-4 text-white/50 text-[11px] font-bold mb-1">工種</div>
+        <div className="scroll-x overflow-x-auto flex gap-2 px-4 pb-1">
+          {WORK_TYPES.map(w=>{
+            const on=wt===w;
+            return <button key={w} onClick={()=>setWt(w)}
+              className={"tap shrink-0 rounded-full px-5 py-2.5 font-bold text-base border "+(on?'bg-amber text-navy border-amber':'bg-navy2 text-white/75 border-white/10')}>
+              {w}
+            </button>;
+          })}
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center px-6">
+        <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={onPick}/>
+        <button disabled={busy} onClick={()=>fileRef.current.click()}
+          className="tap w-60 h-60 rounded-full bg-amber text-navy flex flex-col items-center justify-center shadow-2xl border-[10px] border-white/15 disabled:opacity-60">
+          <span className="text-8xl leading-none">📷</span>
+          <span className="font-black text-2xl mt-1">{busy?'保存中…':'撮影'}</span>
+        </button>
+        <p className="text-white/45 text-sm mt-5 text-center leading-relaxed">
+          押すたびにカメラが開きます。<br/>
+          <b className="text-amber">{site}</b> の <b className="text-amber">{wt}</b> として<br/>自動で名前がついて保存されます。
+        </p>
+      </div>
+
+      <div className="px-4 pb-4">
+        <div className="bg-navy2/60 rounded-xl py-2.5 text-center text-white/70 text-sm border border-white/10">
+          今日の <b className="text-amber">{wt}</b>：<b className="text-white text-base">{todayCount}</b> 枚 撮影
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============ 探す画面（現場→工種→日付で3タップ） ============ */
+function Find({photos,reload,onExport}){
+  const [site,setSite]=useState(null);
+  const [wt,setWt]=useState(null);
+  const sites=Array.from(new Set(photos.map(p=>p.site)));
+
+  useEffect(()=>{ if(sites.length&&(site===null||sites.indexOf(site)<0)){setSite(sites[0]);setWt(null);} },[photos]);
+
+  if(!photos.length) return <div className="flex flex-col items-center justify-center h-full px-8 text-center">
+    <div className="text-6xl mb-4">🔍</div>
+    <p className="text-white font-bold text-lg mb-1">まだ写真がありません</p>
+    <p className="text-white/55 text-sm">「撮影」タブで撮ると、ここで現場ごとに探せます。</p>
+  </div>;
+
+  const sp=photos.filter(p=>p.site===site);
+  const wtsInSite=WORK_TYPES.filter(w=>sp.some(p=>p.wt===w));
+  const shown=(wt?sp.filter(p=>p.wt===wt):sp).sort((a,b)=>b.ts-a.ts);
+  const unexp=shown.filter(p=>!p.exported).length;
+
+  const del=async p=>{ if(confirm('この写真を削除しますか？')){await dbDel(p.id);reload();} };
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="scroll-x overflow-x-auto flex gap-2 px-3 pt-3 pb-2">
+        {sites.map(s=>{
+          const on=s===site;
+          return <button key={s} onClick={()=>{setSite(s);setWt(null);}}
+            className={"tap shrink-0 rounded-full px-4 py-2 font-bold text-sm border "+(on?'bg-amber text-navy border-amber':'bg-navy2 text-white/70 border-white/10')}>
+            📍{s}
+          </button>;
+        })}
+      </div>
+      <div className="scroll-x overflow-x-auto flex gap-2 px-3 pb-2">
+        <button onClick={()=>setWt(null)} className={"tap shrink-0 rounded-full px-4 py-1.5 text-sm border "+(!wt?'bg-navy3 text-white border-white/20':'bg-navy2 text-white/55 border-white/10')}>すべて</button>
+        {wtsInSite.map(w=>{
+          const on=w===wt;
+          return <button key={w} onClick={()=>setWt(w)} className={"tap shrink-0 rounded-full px-4 py-1.5 text-sm border "+(on?'bg-navy3 text-white border-white/20':'bg-navy2 text-white/55 border-white/10')}>{w}</button>;
+        })}
+      </div>
+
+      <div className="px-3 pb-2">
+        <div className="flex items-center justify-between bg-navy2 rounded-xl px-3 py-2 border border-white/10">
+          <span className="text-white/70 text-sm">{shown.length}枚{unexp>0 && <span className="text-amber"> / 未保存{unexp}</span>}</span>
+          <button onClick={()=>onExport(shown)} className="tap bg-amber text-navy text-sm font-black px-4 py-2 rounded-lg">
+            📤 写真アプリに保存
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-2 pb-4">
+        <div className="grid grid-cols-3 gap-1.5">
+          {shown.map(p=>(
+            <div key={p.id} className="relative">
+              <img src={p.img} className="w-full aspect-square object-cover rounded-lg"/>
+              {p.exported
+                ? <div className="absolute top-1 left-1 bg-ok text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">✓保存済</div>
+                : <div className="absolute top-1 left-1 bg-amber text-navy text-[10px] font-bold px-1.5 py-0.5 rounded-full">未保存</div>}
+              <button onClick={()=>del(p)} className="tap absolute top-1 right-1 bg-black/55 text-white w-6 h-6 rounded-full text-xs">✕</button>
+              <div className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[9px] px-1 py-0.5 rounded-b-lg leading-tight">
+                {p.wt}_{ymd(p.ts)}<br/>{hm(p.ts)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============ 現場（登録・シンプル） ============ */
+function Sites({sites,setSites}){
+  const [name,setName]=useState('');
+  const add=()=>{const n=name.trim();if(!n)return;if(sites.indexOf(n)>=0){alert('同じ現場があります');return;}const a=[n].concat(sites);setSites(a);saveSites(a);setName('');};
+  const del=s=>{if(confirm('現場「'+s+'」を一覧から消しますか？\n（撮影済みの写真は消えません）')){const a=sites.filter(x=>x!==s);setSites(a);saveSites(a);}};
+  return (
+    <div className="p-4 space-y-4 overflow-y-auto h-full">
+      <div className="bg-navy2 rounded-2xl p-4 border border-white/10">
+        <div className="text-white font-bold mb-2">現場を追加</div>
+        <div className="flex gap-2">
+          <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()}
+            placeholder="例：田中様邸 新築" className="flex-1 bg-navy text-white rounded-xl px-3 py-3 border border-white/10 outline-none"/>
+          <button onClick={add} className="tap bg-amber text-navy font-black px-5 rounded-xl">追加</button>
+        </div>
+        <p className="text-white/45 text-xs mt-2">工種（基礎・配筋・型枠…）は最初から入っているので、追加するのは現場名だけです。</p>
+      </div>
+      <div className="bg-navy2 rounded-2xl p-4 border border-white/10">
+        <div className="text-white font-bold mb-2">登録済みの現場</div>
+        {!sites.length && <p className="text-white/45 text-sm">まだありません。上から追加してください。</p>}
+        <div className="space-y-2">
+          {sites.map(s=>(
+            <div key={s} className="flex items-center justify-between bg-navy rounded-xl px-3 py-3 border border-white/5">
+              <span className="text-white">📍 {s}</span>
+              <button onClick={()=>del(s)} className="tap text-red-300 text-sm font-bold">削除</button>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="bg-navy2/50 rounded-2xl p-4 border border-white/10 text-white/55 text-xs leading-relaxed">
+        <b className="text-amber">このアプリの考え方</b><br/>
+        写真はすべてこの端末の中だけに保存され、外部には送りません。撮った瞬間に名前（工種＋日付＋連番）がつき、現場ごとに整理済みになります。
+        会社のパソコンへ移したいときは「探す」画面で「写真アプリに保存」を押すだけ。難しい連携設定はありません。
+      </div>
+    </div>
+  );
+}
+
+/* ============ ルート ============ */
+function App(){
+  const [tab,setTab]=useState('cap');
+  const [sites,setSites]=useState(loadSites());
+  const last=(function(){try{return JSON.parse(localStorage.getItem(LS_LAST))||{};}catch(e){return{};}})();
+  const [site,setSite]=useState(last.site||loadSites()[0]||'');
+  const [wt,setWt]=useState(last.wt||WORK_TYPES[0]);
+  const [photos,setPhotos]=useState([]);
+  const [toast,setToast]=useState('');
+
+  const reload=useCallback(async()=>{setPhotos(await dbAll());},[]);
+  useEffect(()=>{reload();},[reload]);
+  useEffect(()=>{localStorage.setItem(LS_LAST,JSON.stringify({site:site,wt:wt}));},[site,wt]);
+  useEffect(()=>{if(sites.length&&sites.indexOf(site)<0)setSite(sites[0]);},[sites]);
+
+  const flash=m=>{setToast(m);setTimeout(()=>setToast(''),1800);};
+
+  const todayStr=ymd(Date.now());
+  const todayCount=photos.filter(p=>p.site===site&&p.wt===wt&&ymd(p.ts)===todayStr).length;
+
+  const seqMap={};
+  photos.slice().sort((a,b)=>a.ts-b.ts).forEach(p=>{const k=p.site+'|'+p.wt;seqMap[k]=(seqMap[k]||0)+1;p._seq=seqMap[k];});
+
+  const exportPhotos=async(list)=>{
+    if(!list.length){flash('保存する写真がありません');return;}
+    try{
+      const filesArr=list.map(p=>{
+        const blob=dataURLtoBlob(p.img);
+        const name=p.wt+'_'+ymd(p.ts)+'_'+p3(p._seq||1)+'.jpg';
+        return new File([blob],name,{type:'image/jpeg'});
+      });
+      if(navigator.canShare && navigator.canShare({files:filesArr})){
+        await navigator.share({files:filesArr,title:'現場写真'});
+        for(const p of list){await dbPut(Object.assign({},p,{exported:true}));}
+        await reload();
+        flash(list.length+'枚 書き出しました');
+      }else{
+        filesArr.forEach(f=>{const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;a.click();});
+        for(const p of list){await dbPut(Object.assign({},p,{exported:true}));}
+        await reload();
+        flash('ダウンロードしました');
+      }
+    }catch(err){ if(String(err).indexOf('Abort')<0) flash('書き出しを中止しました'); }
+  };
+
+  return (
+    <div className="h-full flex flex-col bg-navy">
+      <div className="bg-navy px-4 py-2.5 flex items-center justify-between border-b border-white/5">
+        <div className="flex items-center gap-2">
+          <span className="text-amber font-black text-xs tracking-wide">HEALTH ARCHI</span>
+          <span className="text-white/30">/</span>
+          <span className="text-white font-bold text-sm">現場写真</span>
+        </div>
+        <span className="text-white/30 text-[10px]">T008</span>
+      </div>
+
+      <div className="flex-1 overflow-hidden">
+        {tab==='cap' && <Capture sites={sites} site={site} setSite={setSite} wt={wt} setWt={setWt} onShot={reload} todayCount={todayCount}/>}
+        {tab==='find'&& <Find photos={photos} reload={reload} onExport={exportPhotos}/>}
+        {tab==='site'&& <Sites sites={sites} setSites={setSites}/>}
+      </div>
+
+      <div className="bg-navy border-t border-white/10 flex">
+        {[['cap','📷','撮影'],['find','🔍','探す'],['site','📍','現場']].map(arr=>{
+          const id=arr[0],ic=arr[1],lb=arr[2],on=tab===id;
+          return <button key={id} onClick={()=>setTab(id)} className={"tap flex-1 flex flex-col items-center gap-0.5 py-2.5 "+(on?'text-amber':'text-white/50')}>
+            <span className="text-2xl leading-none">{ic}</span><span className="text-[11px] font-bold">{lb}</span>
+          </button>;
+        })}
+      </div>
+
+      {toast && <div className="pop fixed bottom-24 left-1/2 -translate-x-1/2 bg-ok text-white px-5 py-2.5 rounded-full font-bold shadow-xl z-50">✓ {toast}</div>}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
