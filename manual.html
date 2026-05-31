@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>現場写真管理 ― 使いかたマニュアル</title>
+<style>
+  :root{
+    --ink:#0f2a43; --sub:#6a7787; --line:#e6eaef; --bg:#f5f7f9; --card:#fff;
+    --brand:#0f2a43; --amber:#e6a200; --ok:#1faa54; --danger:#e5484d;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic Medium",system-ui,sans-serif;
+    line-height:1.85; font-size:16px;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:720px; margin:0 auto; padding:0 18px 64px;}
+
+  /* ヘッダー */
+  header{
+    background:var(--brand); color:#fff; text-align:center;
+    padding:34px 20px 30px; border-radius:0 0 26px 26px; margin-bottom:22px;
+  }
+  header .logo{font-weight:900; letter-spacing:.08em; font-size:13px; opacity:.9;}
+  header .logo .am{color:var(--amber);}
+  header h1{font-size:24px; margin:10px 0 6px; font-weight:800;}
+  header p{margin:0; font-size:14px; color:#cdd8e4;}
+
+  /* ひとことで言うと（概要） */
+  .hero{
+    background:linear-gradient(135deg,#fff,#fffaf0);
+    border:2px solid var(--amber); border-radius:20px;
+    padding:22px 20px; margin-bottom:26px;
+    box-shadow:0 6px 24px rgba(230,162,0,.12);
+  }
+  .hero .tag{
+    display:inline-block; background:var(--amber); color:#fff; font-weight:800;
+    font-size:13px; padding:4px 14px; border-radius:999px; margin-bottom:12px;
+  }
+  .hero p{margin:0; font-size:17px; font-weight:600;}
+  .hero .big{font-size:19px; font-weight:800; color:var(--brand);}
+  .hero .amber{color:#b67f00; font-weight:800;}
+
+  /* 3ステップ */
+  .steps{display:flex; gap:10px; margin:18px 0 4px; flex-wrap:wrap;}
+  .step{
+    flex:1; min-width:150px; background:var(--card); border:1px solid var(--line);
+    border-radius:16px; padding:16px 14px; text-align:center;
+  }
+  .step .num{
+    display:inline-flex; width:30px; height:30px; border-radius:50%;
+    background:var(--brand); color:#fff; font-weight:800;
+    align-items:center; justify-content:center; margin-bottom:8px; font-size:15px;
+  }
+  .step b{display:block; font-size:15px; margin-bottom:4px;}
+  .step span{font-size:13px; color:var(--sub); line-height:1.6;}
+  .arrow{text-align:center; color:var(--amber); font-size:20px; line-height:1; margin:2px 0;}
+
+  /* セクション */
+  section{
+    background:var(--card); border:1px solid var(--line); border-radius:18px;
+    padding:22px 20px; margin-bottom:18px;
+    box-shadow:0 1px 3px rgba(20,33,46,.05);
+  }
+  h2{
+    font-size:19px; margin:0 0 14px; display:flex; align-items:center; gap:10px;
+    border-bottom:2px solid var(--bg); padding-bottom:10px;
+  }
+  h2 .ic{
+    flex:none; width:30px; height:30px; border-radius:9px;
+    background:var(--brand); color:#fff; display:inline-flex;
+    align-items:center; justify-content:center; font-size:16px;
+  }
+  h3{font-size:16px; margin:18px 0 8px; color:var(--brand);}
+  p{margin:0 0 10px;}
+  ul,ol{margin:0 0 10px; padding-left:22px;}
+  li{margin-bottom:7px;}
+
+  .note{
+    background:#eef6ff; border-left:4px solid #3b82f6; border-radius:0 10px 10px 0;
+    padding:12px 14px; margin:14px 0; font-size:14.5px;
+  }
+  .tip{
+    background:#fff8e8; border-left:4px solid var(--amber); border-radius:0 10px 10px 0;
+    padding:12px 14px; margin:14px 0; font-size:14.5px;
+  }
+  .warn{
+    background:#fdeef0; border-left:4px solid var(--danger); border-radius:0 10px 10px 0;
+    padding:12px 14px; margin:14px 0; font-size:14.5px;
+  }
+  .note b,.tip b,.warn b{display:block; margin-bottom:3px;}
+
+  /* ボタン見本 */
+  .btn{
+    display:inline-block; background:var(--brand); color:#fff; font-weight:700;
+    padding:3px 12px; border-radius:8px; font-size:13.5px; white-space:nowrap;
+  }
+  .btn.amber{background:var(--amber);}
+  .btn.line{background:var(--bg); color:var(--ink); border:1px solid var(--line);}
+  kbd{
+    background:var(--bg); border:1px solid var(--line); border-radius:6px;
+    padding:1px 8px; font-size:13.5px; font-weight:600;
+  }
+
+  /* ファイル名の例 */
+  .filename{
+    background:var(--ink); color:#fff; border-radius:12px; padding:16px;
+    font-family:ui-monospace,Menlo,Consolas,monospace; font-size:15px;
+    text-align:center; letter-spacing:.02em; margin:12px 0; word-break:break-all;
+  }
+  .filename .b{color:#8fd0ff;}
+  .filename .a{color:#ffd166;}
+  .filename .g{color:#9fe6b8;}
+  .legend{display:flex; flex-wrap:wrap; gap:8px 16px; font-size:13px; color:var(--sub); justify-content:center;}
+  .legend span::before{content:"●"; margin-right:5px;}
+  .legend .b::before{color:#3b82f6;}
+  .legend .a::before{color:var(--amber);}
+  .legend .g::before{color:var(--ok);}
+
+  table{width:100%; border-collapse:collapse; margin:10px 0; font-size:14.5px;}
+  th,td{border:1px solid var(--line); padding:9px 11px; text-align:left; vertical-align:top;}
+  th{background:var(--bg); font-weight:700; white-space:nowrap;}
+
+  .faq{border-top:1px solid var(--line); padding-top:14px; margin-top:14px;}
+  .faq:first-of-type{border-top:none; padding-top:0; margin-top:0;}
+  .q{font-weight:700; color:var(--brand); margin-bottom:4px;}
+  .q::before{content:"Q. "; color:var(--amber);}
+  .a-line{color:#334; }
+  .a-line::before{content:"A. "; font-weight:700; color:var(--sub);}
+
+  .safe{background:#f1faf4; border:1px solid #cdeed8;}
+  .safe h2{border-color:#dff2e6;}
+  .safe ul{list-style:none; padding-left:0;}
+  .safe li{padding-left:26px; position:relative;}
+  .safe li::before{content:"✓"; color:var(--ok); font-weight:900; position:absolute; left:4px;}
+
+  footer{text-align:center; color:var(--sub); font-size:12px; margin-top:26px; line-height:1.8;}
+
+  .toc{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px 20px; margin-bottom:18px;}
+  .toc b{display:block; margin-bottom:8px; font-size:14px; color:var(--sub);}
+  .toc a{color:var(--brand); text-decoration:none; font-weight:600; font-size:14.5px;}
+  .toc ol{margin:0; padding-left:20px;}
+  .toc li{margin-bottom:5px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span>HEALTH </span><span class="am">ARCHI</span></div>
+  <h1>現場写真管理アプリ</h1>
+  <p>かんたん 使いかたマニュアル</p>
+</header>
+
+<div class="wrap">
+
+  <!-- ひとことで言うと -->
+  <div class="hero">
+    <span class="tag">ひとことで言うと</span>
+    <p class="big">
+      <span class="amber">現場</span>と<span class="amber">工種</span>を選んで写真をとるだけ。
+    </p>
+    <p>
+      あとは<b>写真の名前が自動でつく</b>ので、
+      面倒な入力やファイル名づけは一切いりません。
+      最後に「データを保存」を押して、<b>パソコンやGoogleドライブにまとめて移すだけ</b>です。
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <span class="num">1</span>
+        <b>選ぶ</b>
+        <span>現場と工種を<br>タップで選ぶ</span>
+      </div>
+      <div class="step">
+        <span class="num">2</span>
+        <b>撮る</b>
+        <span>大きな丸ボタンで<br>カメラ撮影</span>
+      </div>
+      <div class="step">
+        <span class="num">3</span>
+        <b>保存する</b>
+        <span>まとめてPC・<br>ドライブへ</span>
+      </div>
+    </div>
+    <p style="margin:14px 0 0; font-size:14px; color:#7a6a3a;">
+      ※ 名前づけ・整理は全部アプリが自動でやってくれます。
+    </p>
+  </div>
+
+  <!-- 目次 -->
+  <nav class="toc">
+    <b>もくじ</b>
+    <ol>
+      <li><a href="#screens">3つの画面（撮影・写真一覧・設定）</a></li>
+      <li><a href="#prepare">はじめの準備（現場と工種の登録）</a></li>
+      <li><a href="#shoot">写真をとる</a></li>
+      <li><a href="#name">写真の名前のしくみ</a></li>
+      <li><a href="#save">パソコン・Googleドライブに保存する</a></li>
+      <li><a href="#space">容量を空ける（写真を整理する）</a></li>
+      <li><a href="#faq">よくある質問</a></li>
+      <li><a href="#safe">安心ポイント</a></li>
+    </ol>
+  </nav>
+
+  <!-- 3画面 -->
+  <section id="screens">
+    <h2><span class="ic">📱</span>3つの画面</h2>
+    <p>画面の<b>一番下にある3つのボタン</b>で切り替えます。やることはこれだけです。</p>
+    <table>
+      <tr><th>📷 撮影</th><td>現場と工種を選んで、写真をとる画面。<b>ふだん一番よく使います。</b></td></tr>
+      <tr><th>🔲 写真一覧</th><td>とった写真を見る・PCやドライブに<b>保存（書き出し）する</b>画面。</td></tr>
+      <tr><th>⚙️ 設定</th><td>現場の名前や工種を<b>追加・編集する</b>画面。最初の準備で使います。</td></tr>
+    </table>
+  </section>
+
+  <!-- 準備 -->
+  <section id="prepare">
+    <h2><span class="ic">⚙️</span>はじめの準備</h2>
+    <p>最初に一度だけ、<b>現場の名前</b>を登録しておきます。<br>
+    （工種は最初から標準的なものが入っているので、そのまま使えます。）</p>
+
+    <h3>現場（工事名）を登録する</h3>
+    <ol>
+      <li>下のメニューから <b>⚙️ 設定</b> を開きます。</li>
+      <li>一番上の「<b>工事現場</b>」の入力欄に、現場名を入力します。<br>
+          （例：<kbd>田中様邸 新築</kbd>）</li>
+      <li>右の <span class="btn">追加</span> ボタンを押すと、リストに加わります。</li>
+    </ol>
+    <p>現場はいくつでも登録できます。鉛筆マーク ✏️ で名前の修正、ゴミ箱マーク 🗑️ で削除ができます。
+    左のつまみ <kbd>⠿</kbd> を長押しして<b>上下に動かすと並び替え</b>られます。</p>
+
+    <div class="tip">
+      <b>💡 工種について</b>
+      工種（基礎・躯体・外装…など）は最初から入っています。会社のやり方に合わせて、
+      設定画面の「工種」で<b>追加・名前の変更・並び替え・削除</b>ができます。<br>
+      「小分類を使う」をオフにすると、大きな分類だけのシンプルな使い方にもできます。
+    </div>
+  </section>
+
+  <!-- 撮影 -->
+  <section id="shoot">
+    <h2><span class="ic">📷</span>写真をとる</h2>
+    <ol>
+      <li>下のメニューから <b>📷 撮影</b> を開きます。</li>
+      <li>画面上の<b>現場名</b>をタップして、撮影する現場を選びます。</li>
+      <li>「工種」の帯から、いまの作業（例：<kbd>基礎</kbd>）を選びます。<br>
+          必要なら下の「小分類」も選びます（例：<kbd>配筋</kbd>）。任意でOK。</li>
+      <li>真ん中の<b>大きな丸いボタン</b>を押すと、カメラが立ち上がります。</li>
+      <li>写真をとると、<b>自動で名前がついて保存</b>されます。</li>
+    </ol>
+    <div class="tip">
+      <b>💡 続けて撮れます</b>
+      同じ工種の写真は、丸ボタンを押すたびに何枚でも撮れます。
+      工種が変わったら、上の帯で選び直すだけ。<b>1枚ずつ名前を考える必要はありません。</b>
+    </div>
+    <div class="note">
+      <b>📝 メモ</b>
+      写真はまず<b>このアプリの中（端末内）に保存</b>されます。
+      この時点ではまだ「未保存（オレンジの印）」の状態。
+      あとで「写真一覧」からまとめてPCやドライブに書き出します。
+    </div>
+  </section>
+
+  <!-- 名前のしくみ -->
+  <section id="name">
+    <h2><span class="ic">🏷️</span>写真の名前のしくみ</h2>
+    <p>名前は<b>自動で</b>つきます。並び順の番号・工種・日付・連番が組み合わさります。</p>
+
+    <div class="filename">
+      <span class="b">2_基礎</span>_<span class="a">05_配筋</span>_<span class="g">20260531</span>_001.jpg
+    </div>
+    <div class="legend">
+      <span class="b">工種（大分類）と番号</span>
+      <span class="a">小分類と番号</span>
+      <span class="g">撮影日</span>
+      <span>＋ 連番</span>
+    </div>
+
+    <p style="margin-top:14px;">この名前のおかげで、PCに移したときに<b>工種ごと・日付ごとに自然に並ぶ</b>ので、
+    あとから探すのがとてもラクになります。</p>
+    <div class="tip">
+      <b>💡 番号は並び順で決まります</b>
+      設定の「工種」で順番を入れ替えると、名前の頭の番号も変わります。
+      会社の書類の並びに合わせておくと便利です。
+    </div>
+  </section>
+
+  <!-- 保存 -->
+  <section id="save">
+    <h2><span class="ic">💾</span>パソコン・Googleドライブに保存する</h2>
+    <p>撮りためた写真を、<b>まとめて書き出します。</b>これが「データを保存」です。</p>
+    <ol>
+      <li>下のメニューから <b>🔲 写真一覧</b> を開きます。</li>
+      <li>上の帯で<b>現場</b>を選びます。必要なら工種でしぼり込みます。</li>
+      <li>右上の <span class="btn">データを保存</span> ボタンを押します。</li>
+      <li>iPhoneの<b>共有メニュー（保存先を選ぶ画面）</b>が出てきます。</li>
+      <li>保存したい場所を選びます。</li>
+    </ol>
+
+    <h3>保存先の選び方</h3>
+    <table>
+      <tr><th>Googleドライブ</th><td>共有メニューから「<b>ドライブ</b>」を選ぶと、そのままアップロードできます。
+        （あらかじめGoogleドライブのアプリを入れておいてください）</td></tr>
+      <tr><th>iPhoneの中に保存</th><td>「<b>"ファイル"に保存</b>」を選ぶと、端末内のフォルダに保存できます。</td></tr>
+      <tr><th>パソコンへ</th><td>「<b>AirDrop</b>」でMacへ。または上のGoogleドライブ／ファイルに入れて、
+        PC側で開くのがかんたんです。</td></tr>
+      <tr><th>メール・LINEなど</th><td>共有メニューからそのまま送ることもできます。</td></tr>
+    </table>
+
+    <div class="note">
+      <b>📝 保存すると印が変わります</b>
+      書き出した写真は、印が<b>オレンジ（未保存）→ 緑のチェック（保存済み）</b>に変わります。
+      どれをまだ保存していないか、ひと目でわかります。
+    </div>
+    <div class="tip">
+      <b>💡 こまめに保存がおすすめ</b>
+      現場が終わるタイミングなどで、まとめて書き出しておくと安心です。
+    </div>
+  </section>
+
+  <!-- 容量 -->
+  <section id="space">
+    <h2><span class="ic">🧹</span>容量を空ける（写真を整理する）</h2>
+    <p>たくさん撮るとアプリの容量がいっぱいになります。
+    <b>PCやドライブに保存し終わった写真</b>は、アプリから消して容量を空けられます。</p>
+    <ol>
+      <li><b>⚙️ 設定</b> を開きます。</li>
+      <li>一番下の「容量を空ける」で <span class="btn line">保存済みを削除</span> を押します。</li>
+    </ol>
+    <div class="warn">
+      <b>⚠️ ここに注意</b>
+      消えるのは「<b>保存済み（緑チェック）</b>」の写真だけです。<br>
+      ・<b>まだ保存していない写真（オレンジ印）は消えません。</b><br>
+      ・PCやドライブ、iPhoneの写真アプリに移したものは<b>そのまま残ります</b>（消えるのはこのアプリの中のコピーだけ）。
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq">
+    <h2><span class="ic">❓</span>よくある質問</h2>
+
+    <div class="faq">
+      <div class="q">文字（現場名・工種）が打てません</div>
+      <div class="a-line">画面を一度閉じて開き直すと直ることがあります。それでもダメなときは、Safariのページを再読み込みしてください。</div>
+    </div>
+    <div class="faq">
+      <div class="q">ログインやパスワードは必要ですか？</div>
+      <div class="a-line">不要です。アカウント登録もいりません。開いたらすぐ使えます。</div>
+    </div>
+    <div class="faq">
+      <div class="q">写真はどこに保存されていますか？</div>
+      <div class="a-line">まずはこのアプリの中（お使いの端末の中）です。外部のサーバーには送られません。「データを保存」で初めてドライブやPCに移ります。</div>
+    </div>
+    <div class="faq">
+      <div class="q">機種変更したら写真は引き継げますか？</div>
+      <div class="a-line">アプリ内のデータは端末ごとです。大事な写真は早めに「データを保存」でドライブやPCに移しておいてください。</div>
+    </div>
+    <div class="faq">
+      <div class="q">工種を最初の状態に戻したい</div>
+      <div class="a-line">設定の「工種」の一番下にある「最初の状態に戻す」を押すと、標準の工種に戻せます。</div>
+    </div>
+    <div class="faq">
+      <div class="q">ホーム画面にアイコンを置きたい</div>
+      <div class="a-line">Safariで開いて、共有ボタン →「ホーム画面に追加」を選ぶと、アプリのように使えます。</div>
+    </div>
+  </section>
+
+  <!-- 安心ポイント -->
+  <section id="safe" class="safe">
+    <h2><span class="ic">🔒</span>安心ポイント</h2>
+    <ul>
+      <li><b>外部送信なし</b> ― 写真が勝手にどこかへ送られることはありません。</li>
+      <li><b>ログインなし</b> ― アカウントもパスワードも不要です。</li>
+      <li><b>連携設定なし</b> ― 面倒な初期設定はいりません。</li>
+      <li><b>撮った瞬間に名前がつく</b> ― ファイル名づけの手間がゼロ。</li>
+      <li><b>現場ごとに自動整理</b> ― あとから探すのがかんたん。</li>
+    </ul>
+  </section>
+
+  <footer>
+    現場写真管理アプリ ／ HEALTH ARCHI<br>
+    困ったときは、まずこのマニュアルを見直してみてください。
+  </footer>
+
+</div>
+</body>
+</html>
