@@ -347,19 +347,27 @@ function Sec({title,children,right}){
 }
 
 /* ============ 文字入力（iOSの日本語入力＝IME対応） ============
-   制御コンポーネントだと変換中に value を書き戻してしまい、iPhoneでは
+   制御コンポーネント(value=...)だと変換中に value を書き戻してしまい、iPhoneでは
    1文字ごとに変換が打ち切られてフォーカスが外れる（キーボードが閉じる）。
-   ここでは入力中の文字を自前のローカルstateで持ち、変換中(composition)は
-   value を一切いじらないことで、その不具合を防ぐ。 */
-function TextField({value,onChange,onKeyDown,...rest}){
-  const [local,setLocal]=useState(value==null?'':value);
+   そこで非制御(defaultValue + ref)にして、React が変換中の入力欄に一切手を
+   出さないようにする。これが iOS の IME に最も強い。
+   さらに iOS Safari では「変換中にフォーカスが外れると compositionEnd が
+   発火しない」ことがあり、その場合フラグが立ちっぱなしになって以降まったく
+   文字が打てなくなる。これを防ぐため blur 時にフラグを必ず戻す。 */
+function TextField({value,onChange,onKeyDown,onBlur,...rest}){
+  const ref=useRef(null);
   const comp=useRef(false);
-  useEffect(()=>{ if(!comp.current) setLocal(value==null?'':value); },[value]);
-  const fire=v=>{ setLocal(v); onChange&&onChange(v); };
-  return <input {...rest} value={local} onKeyDown={onKeyDown}
+  /* 親が value を変えたとき（追加後のクリア等）だけ、変換中でなければ DOM に反映 */
+  useEffect(()=>{
+    const v=value==null?'':value;
+    if(ref.current && !comp.current && ref.current.value!==v) ref.current.value=v;
+  },[value]);
+  const fire=()=>{ onChange && onChange(ref.current.value); };
+  return <input ref={ref} {...rest} defaultValue={value==null?'':value} onKeyDown={onKeyDown}
     onCompositionStart={()=>{comp.current=true;}}
-    onCompositionEnd={e=>{comp.current=false;fire(e.target.value);}}
-    onChange={e=>{ if(comp.current)return; fire(e.target.value); }}/>;
+    onCompositionEnd={()=>{comp.current=false;fire();}}
+    onChange={()=>{ if(comp.current)return; fire(); }}
+    onBlur={e=>{ comp.current=false; onBlur&&onBlur(e); }}/>;
 }
 
 /* ============ ドラッグで並べ替えできるリスト（タッチ対応） ============ */
