@@ -4,9 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="現場写真" />
-<meta name="theme-color" content="#0f2a43" />
+<meta name="theme-color" content="#ffffff" />
 <title>HEALTH ARCHI 現場写真</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -14,23 +14,34 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = { theme: { extend: {
-    colors: { navy:'#0f2a43', navy2:'#16395c', navy3:'#1f4a73', amber:'#ffb81c', amber2:'#e6a200', ok:'#22c55e' },
-    fontFamily: { sans:['"Hiragino Kaku Gothic ProN"','"Yu Gothic"','"Meiryo"','system-ui','sans-serif'] }
+    colors: {
+      ink:'#0f2a43', sub:'#6a7787', line:'#e6eaef', bg:'#f5f7f9', card:'#ffffff',
+      brand:'#0f2a43', branddark:'#0a1d30', amber:'#e6a200', ok:'#1faa54', danger:'#e5484d'
+    },
+    fontFamily: { sans:['"Hiragino Sans"','"Hiragino Kaku Gothic ProN"','"Yu Gothic Medium"','system-ui','sans-serif'] },
+    boxShadow:{ soft:'0 1px 3px rgba(20,33,46,.06), 0 4px 16px rgba(20,33,46,.05)' }
   }}}
 </script>
 <style>
   html,body,#root{height:100%;}
-  body{background:#0f2a43;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;
+  body{background:#f7f9fb;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;
     padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);}
-  .tap{transition:transform .08s ease, background .15s ease, opacity .15s;}
-  .tap:active{transform:scale(.95);}
-  @keyframes pop{0%{transform:scale(.7);opacity:0}60%{transform:scale(1.05)}100%{transform:scale(1);opacity:1}}
-  .pop{animation:pop .25s ease}
-  @keyframes flash{0%{opacity:0}30%{opacity:.85}100%{opacity:0}}
-  .flash{animation:flash .35s ease}
+  .tap{transition:transform .12s cubic-bezier(.2,.8,.2,1), background .15s, opacity .15s, box-shadow .15s;}
+  .tap:active{transform:scale(.97);}
   .scroll-x{-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .scroll-x::-webkit-scrollbar{display:none}
-  select{background-image:none;}
+  select{-webkit-appearance:none;appearance:none;background:none;}
+  @keyframes flash{0%{opacity:0}25%{opacity:.9}100%{opacity:0}}
+  .flash{animation:flash .4s ease}
+  @keyframes sheetup{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  .sheetup{animation:sheetup .26s cubic-bezier(.2,.8,.2,1)}
+  @keyframes fadein{from{opacity:0}to{opacity:1}}
+  .fadein{animation:fadein .2s ease}
+  @keyframes toastin{0%{opacity:0;transform:translate(-50%,8px)}100%{opacity:1;transform:translate(-50%,0)}}
+  .toastin{animation:toastin .22s ease}
+  /* スワイプで削除（写真一覧の行） */
+  .swipe-wrap{position:relative;overflow:hidden;border-radius:14px;}
+  .swipe-row{transition:transform .22s cubic-bezier(.2,.8,.2,1);will-change:transform;}
 </style>
 </head>
 <body>
@@ -38,39 +49,57 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
-/* ===== 既定の工種（木造在来工法・新築工事 / 大分類→小分類）===== */
+/* ===== アイコン（線画SVG・統一）===== */
+const Ic = {
+  camera:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||1.7} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.2a1 1 0 0 0 .8-.4l.9-1.2A1 1 0 0 1 9.2 4h5.6a1 1 0 0 1 .8.4l.9 1.2a1 1 0 0 0 .8.4h1.2A2.5 2.5 0 0 1 21 8.5v8A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>,
+  grid:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||1.7} strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="4" y="4" width="6.5" height="6.5" rx="1.4"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.4"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.4"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.4"/></svg>,
+  gear:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||1.7} strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
+  pin:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||1.7} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="2.6"/></svg>,
+  chevron:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||2} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M9 6l6 6-6 6"/></svg>,
+  down:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||2} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M6 9l6 6 6-6"/></svg>,
+  up:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||2} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18 15l-6-6-6 6"/></svg>,
+  share:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||1.8} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>,
+  trash:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||1.8} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7"/><path d="M10 11v6M14 11v6"/></svg>,
+  close:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||2} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M6 6l12 12M18 6L6 18"/></svg>,
+  plus:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||2} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M12 5v14M5 12h14"/></svg>,
+  check:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||2.2} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M5 12l5 5L20 7"/></svg>,
+  pencil:(p)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p&&p.w||1.8} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>,
+};
+
+/* ===== 既定の工種 ===== */
 const DEFAULT_CATS = [
-  { name:'仮設',       subs:['仮設足場','現場養生'] },
-  { name:'基礎',       subs:['根切','砕石','防水シート','捨てコン','配筋','型枠','スリーブ','コンクリ打込','アンカーボルト','基礎全景'] },
-  { name:'躯体',       subs:['土台','建方','上棟式','野地板','構造金物','耐力壁'] },
+  { name:'仮設', subs:['仮設足場','現場養生'] },
+  { name:'基礎', subs:['根切','砕石','防水シート','捨てコン','配筋','型枠','スリーブ','コンクリ打込','アンカーボルト','基礎全景'] },
+  { name:'躯体', subs:['土台','建方','上棟式','野地板','構造金物','耐力壁'] },
   { name:'屋根・雨どい', subs:['ルーフィング','屋根葺き','板金','雨樋'] },
-  { name:'外装',       subs:['サッシ','透湿防水シート','通気層','外壁施工','シーリング','軒天','外部塗装'] },
-  { name:'防水',       subs:['下地','防水'] },
-  { name:'断熱',       subs:['断熱材施工','気密処理'] },
-  { name:'給排水',     subs:['先行配管','内部配管','器具取付','外部配管'] },
-  { name:'電気・ガス',  subs:['内部配線','器具設置','ガス配管'] },
-  { name:'設備',       subs:['UB','キッチン','給湯器','太陽光','浄化槽'] },
-  { name:'内装仕上',   subs:['床','壁下地','天井下地','石膏ボード','階段','クロス','タイル','建具','造作','内部塗装'] },
-  { name:'外構',       subs:['ポーチ','土間下地','土間施工','門回り','植栽','造成'] },
-  { name:'完了・検査',  subs:['中間検査','完了検査'] },
+  { name:'外装', subs:['サッシ','透湿防水シート','通気層','外壁施工','シーリング','軒天','外部塗装'] },
+  { name:'防水', subs:['下地','防水'] },
+  { name:'断熱', subs:['断熱材施工','気密処理'] },
+  { name:'給排水', subs:['先行配管','内部配管','器具取付','外部配管'] },
+  { name:'電気・ガス', subs:['内部配線','器具設置','ガス配管'] },
+  { name:'設備', subs:['UB','キッチン','給湯器','太陽光','浄化槽'] },
+  { name:'内装仕上', subs:['床','壁下地','天井下地','石膏ボード','階段','クロス','タイル','建具','造作','内部塗装'] },
+  { name:'外構', subs:['ポーチ','土間下地','土間施工','門回り','植栽','造成'] },
+  { name:'完了・検査', subs:['中間検査','完了検査'] },
 ];
 
-/* ===== IndexedDB ===== */
+/* ===== DB ===== */
 const DB='ha_genba2', STORE='photos', VER=1;
 function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB,VER);
-  r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains(STORE)){db.createObjectStore(STORE,{keyPath:'id'});}};
+  r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:'id'});};
   r.onsuccess=e=>res(e.target.result);r.onerror=e=>rej(e.target.error);});}
 async function dbPut(rec){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).put(rec);t.oncomplete=res;t.onerror=e=>rej(e.target.error);});}
 async function dbAll(){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction(STORE,'readonly');const q=t.objectStore(STORE).getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=e=>rej(e.target.error);});}
 async function dbDel(id){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).delete(id);t.oncomplete=res;t.onerror=e=>rej(e.target.error);});}
 async function dbDelMany(ids){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction(STORE,'readwrite');const os=t.objectStore(STORE);ids.forEach(id=>os.delete(id));t.oncomplete=res;t.onerror=e=>rej(e.target.error);});}
 
-/* ===== 設定（localStorage）===== */
-const LS_SITES='ha2_sites', LS_CATS='ha2_cats', LS_LAST='ha2_last';
+/* ===== 設定 ===== */
+const LS_SITES='ha2_sites', LS_CATS='ha2_cats', LS_LAST='ha2_last', LS_USESUB='ha2_usesub';
 const jget=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v;}catch(e){return d;}};
 const jset=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 const loadSites=()=>jget(LS_SITES,[]);
 const loadCats=()=>{const v=jget(LS_CATS,null);return (v&&v.length)?v:JSON.parse(JSON.stringify(DEFAULT_CATS));};
+const loadUseSub=()=>jget(LS_USESUB,true);
 
 function shrink(file,max=1600){return new Promise(res=>{const img=new Image();
   img.onload=()=>{let w=img.width,h=img.height;if(Math.max(w,h)>max){const r=max/Math.max(w,h);w=Math.round(w*r);h=Math.round(h*r);}
@@ -80,127 +109,110 @@ function shrink(file,max=1600){return new Promise(res=>{const img=new Image();
 const p2=n=>String(n).padStart(2,'0');
 const p3=n=>String(n).padStart(3,'0');
 const ymd=ts=>{const d=new Date(ts);return ''+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate());};
+const ymdJ=ts=>{const d=new Date(ts);return (d.getMonth()+1)+'/'+d.getDate();};
 const hm=ts=>{const d=new Date(ts);return p2(d.getHours())+':'+p2(d.getMinutes());};
 
-/* 名前：B案 → 大番号_大分類_小番号_小分類_日付_連番（小分類なしは大分類まで） */
 function buildName(p,cats){
   const ci=cats.findIndex(c=>c.name===p.cat);
   const cnum=ci>=0?(ci+1):0;
   let base=(cnum>0?cnum+'_':'')+p.cat;
-  if(p.sub){
-    const si=ci>=0?cats[ci].subs.indexOf(p.sub):-1;
-    const snum=si>=0?p2(si+1):'';
-    base+='_'+(snum?snum+'_':'')+p.sub;
-  }
+  if(p.sub){const si=ci>=0?cats[ci].subs.indexOf(p.sub):-1;const snum=si>=0?p2(si+1):'';base+='_'+(snum?snum+'_':'')+p.sub;}
   return base+'_'+ymd(p.ts)+'_'+p3(p._seq||1);
 }
 function dataURLtoBlob(durl){const a=durl.split(',');const mime=a[0].match(/:(.*?);/)[1];const bin=atob(a[1]);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:mime});}
 
-/* ============ 撮影画面（2段階：大分類→小分類） ============ */
-function Capture({sites,site,setSite,cats,cat,setCat,sub,setSub,onShot,todayCount,goSet}){
+/* ============ 撮影 ============ */
+function Capture({sites,site,setSite,cats,cat,setCat,sub,setSub,useSub,onShot,todayCount,goSet}){
   const fileRef=useRef();
   const [flash,setFlash]=useState(false);
   const [busy,setBusy]=useState(false);
-  const [sitePick,setSitePick]=useState(false);
-
+  const [sheet,setSheet]=useState(false);
   const curCat=cats.find(c=>c.name===cat)||cats[0];
 
   const onPick=async e=>{
-    const files=[].slice.call(e.target.files||[]);
-    if(!files.length)return;
+    const files=[].slice.call(e.target.files||[]); if(!files.length)return;
     setBusy(true);
-    for(const f of files){
-      const data=await shrink(f);
-      await dbPut({id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),site,cat,sub:sub||'',ts:Date.now(),img:data,exported:false});
-      await onShot();
-    }
-    setFlash(true);setTimeout(()=>setFlash(false),350);
-    e.target.value=''; setBusy(false);
+    for(const f of files){const data=await shrink(f);
+      await dbPut({id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),site,cat,sub:useSub?(sub||''):'',ts:Date.now(),img:data,exported:false});await onShot();}
+    setFlash(true);setTimeout(()=>setFlash(false),400); e.target.value='';setBusy(false);
   };
 
   if(!sites.length){
-    return <div className="flex flex-col items-center justify-center h-full px-8 text-center">
-      <div className="text-6xl mb-4">🏗️</div>
-      <p className="text-white font-bold text-lg mb-2">まず現場を1つ登録しましょう</p>
-      <p className="text-white/60 text-sm mb-6">下の「設定」で現場名を追加すると、撮影が始められます。</p>
-      <button onClick={goSet} className="tap bg-amber text-navy font-black px-6 py-3 rounded-2xl">⚙️ 設定をひらく</button>
+    return <div className="flex flex-col items-center justify-center h-full px-10 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-brand/10 text-brand flex items-center justify-center mb-5"><Ic.pin style={{width:30,height:30}}/></div>
+      <p className="text-ink font-bold text-lg mb-1.5">現場を登録しましょう</p>
+      <p className="text-sub text-sm mb-6 leading-relaxed">設定から現場名を追加すると、<br/>撮影を始められます。</p>
+      <button onClick={goSet} className="tap bg-brand text-white font-bold px-7 py-3.5 rounded-2xl shadow-soft">設定をひらく</button>
     </div>;
   }
 
   return (
-    <div className="flex flex-col h-full select-none">
-      {flash && <div className="flash fixed inset-0 bg-white z-50 pointer-events-none"/>}
+    <div className="flex flex-col h-full select-none bg-bg">
+      {flash && <div className="flash fixed inset-0 bg-black z-50 pointer-events-none"/>}
 
-      {/* 現場 */}
+      {/* 現場ボタン */}
       <div className="px-4 pt-3">
-        <button onClick={()=>setSitePick(true)} className="tap w-full bg-navy2 rounded-2xl px-4 py-2.5 border border-white/10 flex items-center justify-between">
-          <span className="flex items-center gap-2 min-w-0"><span className="text-amber shrink-0">📍</span><span className="text-white text-base font-bold truncate">{site}</span></span>
-          <span className="text-white/45 text-xs shrink-0">現場を選ぶ ▾</span>
+        <button onClick={()=>setSheet(true)} className="tap w-full bg-card rounded-2xl px-4 py-3 shadow-soft flex items-center justify-between">
+          <span className="flex items-center gap-2.5 min-w-0">
+            <span className="text-brand shrink-0"><Ic.pin style={{width:19,height:19}}/></span>
+            <span className="text-ink text-[17px] font-bold truncate">{site}</span>
+          </span>
+          <span className="text-sub shrink-0"><Ic.down style={{width:18,height:18}}/></span>
         </button>
       </div>
 
-      {/* いま撮ると：大＞小 のパンくず */}
-      <div className="px-4 pt-2">
-        <div className="bg-navy3/40 rounded-xl px-3 py-2 border border-amber/30 flex items-center gap-2">
-          <span className="text-white/50 text-[11px] font-bold shrink-0">いま：</span>
-          <span className="text-amber font-bold truncate">{cat}{sub?' ＞ '+sub:''}</span>
-        </div>
-      </div>
-
       {/* 大分類 */}
-      <div className="pt-2">
-        <div className="px-4 text-white/50 text-[11px] font-bold mb-1">① 大分類</div>
-        <div className="scroll-x overflow-x-auto flex gap-2 px-4 pb-1">
-          {cats.map(c=>{
-            const on=cat===c.name;
+      <div className="pt-3">
+        <div className="px-4 text-sub text-[12px] font-semibold mb-1.5 tracking-wide">{useSub?'工種':'工種を選んで撮影'}</div>
+        <div className="scroll-x overflow-x-auto flex gap-2 px-4">
+          {cats.map(c=>{const on=cat===c.name;
             return <button key={c.name} onClick={()=>{setCat(c.name);setSub('');}}
-              className={"tap shrink-0 rounded-full px-4 py-2 font-bold text-sm border "+(on?'bg-amber text-navy border-amber':'bg-navy2 text-white/75 border-white/10')}>
-              {c.name}
-            </button>;
-          })}
+              className={"tap shrink-0 rounded-full px-4 py-2 text-[14px] font-semibold border "+(on?'bg-ink text-white border-ink':'bg-card text-ink/70 border-line')}>{c.name}</button>;})}
         </div>
       </div>
 
-      {/* 小分類 */}
-      <div className="pt-2">
-        <div className="px-4 text-white/50 text-[11px] font-bold mb-1">② 小分類（任意・選ばなくても撮れます）</div>
-        <div className="scroll-x overflow-x-auto flex gap-2 px-4 pb-1">
-          <button onClick={()=>setSub('')} className={"tap shrink-0 rounded-full px-4 py-2 text-sm border "+(!sub?'bg-navy3 text-white border-white/30':'bg-navy2 text-white/55 border-white/10')}>指定なし</button>
-          {curCat.subs.map(s=>{
-            const on=sub===s;
-            return <button key={s} onClick={()=>setSub(s)}
-              className={"tap shrink-0 rounded-full px-4 py-2 text-sm border "+(on?'bg-amber text-navy border-amber font-bold':'bg-navy2 text-white/70 border-white/10')}>
-              {s}
-            </button>;
-          })}
+      {/* 小分類（useSub時のみ） */}
+      {useSub && <div className="pt-2.5">
+        <div className="px-4 text-sub text-[12px] font-semibold mb-1.5 tracking-wide">小分類<span className="text-sub/60 font-normal">（任意）</span></div>
+        <div className="scroll-x overflow-x-auto flex gap-2 px-4">
+          <button onClick={()=>setSub('')} className={"tap shrink-0 rounded-full px-4 py-2 text-[14px] border "+(!sub?'bg-amber/15 text-ink border-amber/50 font-semibold':'bg-card text-sub border-line')}>指定なし</button>
+          {curCat.subs.map(s=>{const on=sub===s;
+            return <button key={s} onClick={()=>setSub(s)} className={"tap shrink-0 rounded-full px-4 py-2 text-[14px] border "+(on?'bg-amber text-ink border-amber font-bold':'bg-card text-ink/70 border-line')}>{s}</button>;})}
         </div>
-      </div>
+      </div>}
 
       {/* シャッター */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 min-h-0">
         <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={onPick}/>
+        <div className="text-sub text-[13px] mb-4 font-medium">
+          <span className="text-ink font-bold">{cat}</span>{useSub&&sub?<span className="text-amber font-bold"> ／ {sub}</span>:''} に保存
+        </div>
         <button disabled={busy} onClick={()=>fileRef.current.click()}
-          className="tap w-48 h-48 rounded-full bg-amber text-navy flex flex-col items-center justify-center shadow-2xl border-[10px] border-white/15 disabled:opacity-60">
-          <span className="text-7xl leading-none">📷</span>
-          <span className="font-black text-xl mt-1">{busy?'保存中…':'撮影'}</span>
+          className="tap relative w-44 h-44 rounded-full bg-ink text-white flex items-center justify-center disabled:opacity-60"
+          style={{boxShadow:'0 10px 30px rgba(15,42,67,.30)'}}>
+          <span className="absolute inset-2.5 rounded-full border-2 border-amber/70"></span>
+          {busy?<span className="font-bold text-lg">保存中…</span>:<Ic.camera style={{width:62,height:62}} w={1.5}/>}
         </button>
-        <p className="text-white/40 text-xs mt-3 text-center leading-relaxed">押すたびにカメラが開き、自動で名前がついて保存されます</p>
+        <div className="text-sub/70 text-[12px] mt-4">押すたびに撮影・自動で名前がつきます</div>
       </div>
 
       <div className="px-4 pb-3">
-        <div className="bg-navy2/60 rounded-xl py-2 text-center text-white/70 text-sm border border-white/10">
-          今日の <b className="text-amber">{cat}{sub?'／'+sub:''}</b>：<b className="text-white">{todayCount}</b> 枚
+        <div className="bg-card rounded-xl py-2.5 text-center text-sub text-[13px] shadow-soft">
+          今日の <span className="text-ink font-bold">{cat}{useSub&&sub?'／'+sub:''}</span>　<span className="text-ink font-bold text-[15px]">{todayCount}</span> 枚
         </div>
       </div>
 
-      {sitePick && <div className="fixed inset-0 z-40 bg-black/50 flex items-end" onClick={()=>setSitePick(false)}>
-        <div className="w-full bg-navy rounded-t-3xl border-t border-white/10 max-h-[70%] overflow-y-auto p-4" onClick={e=>e.stopPropagation()}>
-          <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-3"></div>
-          <div className="text-white font-bold mb-2 px-1">現場を選ぶ</div>
-          <div className="space-y-2">
-            {sites.map(s=>{const on=s===site;return <button key={s} onClick={()=>{setSite(s);setSitePick(false);}}
-              className={"tap w-full text-left rounded-xl px-4 py-3 border flex items-center justify-between "+(on?'bg-amber text-navy border-amber font-bold':'bg-navy2 text-white border-white/10')}>
-              <span className="truncate">📍 {s}</span>{on && <span>✓</span>}</button>;})}
+      {/* 現場シート */}
+      {sheet && <div className="fixed inset-0 z-40 bg-black/30 fadein flex items-end" onClick={()=>setSheet(false)}>
+        <div className="sheetup w-full bg-card rounded-t-3xl max-h-[72%] overflow-y-auto p-4 pb-7" onClick={e=>e.stopPropagation()}>
+          <div className="w-10 h-1 bg-line rounded-full mx-auto mb-4"></div>
+          <div className="text-ink font-bold mb-3 px-1 text-[15px]">現場を選ぶ</div>
+          <div className="space-y-1.5">
+            {sites.map(s=>{const on=s===site;
+              return <button key={s} onClick={()=>{setSite(s);setSheet(false);}}
+                className={"tap w-full text-left rounded-xl px-4 py-3.5 flex items-center justify-between "+(on?'bg-brand text-white':'bg-bg text-ink')}>
+                <span className="flex items-center gap-2 truncate"><Ic.pin style={{width:17,height:17}}/> <span className="truncate font-medium">{s}</span></span>
+                {on&&<Ic.check style={{width:18,height:18}}/>}</button>;})}
           </div>
         </div>
       </div>}
@@ -208,17 +220,17 @@ function Capture({sites,site,setSite,cats,cat,setCat,sub,setSub,onShot,todayCoun
   );
 }
 
-/* ============ 写真一覧 ============ */
+/* ============ 写真一覧（横スワイプ閲覧＋スワイプ削除） ============ */
 function Gallery({photos,reload,onExport,cats,onOpen}){
   const [site,setSite]=useState(null);
   const [cat,setCat]=useState(null);
   const sites=Array.from(new Set(photos.map(p=>p.site)));
   useEffect(()=>{ if(sites.length&&(site===null||sites.indexOf(site)<0)){setSite(sites[0]);setCat(null);} },[photos]);
 
-  if(!photos.length) return <div className="flex flex-col items-center justify-center h-full px-8 text-center">
-    <div className="text-6xl mb-4">🗂️</div>
-    <p className="text-white font-bold text-lg mb-1">まだ写真がありません</p>
-    <p className="text-white/55 text-sm">「撮影」で撮ると、ここに現場ごとに並びます。</p>
+  if(!photos.length) return <div className="flex flex-col items-center justify-center h-full px-10 text-center">
+    <div className="w-16 h-16 rounded-2xl bg-ink/5 text-ink/40 flex items-center justify-center mb-5"><Ic.grid style={{width:30,height:30}}/></div>
+    <p className="text-ink font-bold text-lg mb-1">まだ写真がありません</p>
+    <p className="text-sub text-sm">撮影すると、ここに現場ごとに並びます。</p>
   </div>;
 
   const sp=photos.filter(p=>p.site===site);
@@ -227,32 +239,28 @@ function Gallery({photos,reload,onExport,cats,onOpen}){
   const unexp=shown.filter(p=>!p.exported).length;
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="scroll-x overflow-x-auto flex gap-2 px-3 pt-3 pb-2">
+    <div className="flex flex-col h-full bg-bg">
+      <div className="scroll-x overflow-x-auto flex gap-2 px-4 pt-3 pb-2">
         {sites.map(s=>{const on=s===site;return <button key={s} onClick={()=>{setSite(s);setCat(null);}}
-          className={"tap shrink-0 rounded-full px-4 py-2 font-bold text-sm border "+(on?'bg-amber text-navy border-amber':'bg-navy2 text-white/70 border-white/10')}>📍{s}</button>;})}
+          className={"tap shrink-0 rounded-full px-4 py-2 text-[14px] font-semibold border "+(on?'bg-ink text-white border-ink':'bg-card text-ink/70 border-line')}>{s}</button>;})}
       </div>
-      <div className="scroll-x overflow-x-auto flex gap-2 px-3 pb-2">
-        <button onClick={()=>setCat(null)} className={"tap shrink-0 rounded-full px-4 py-1.5 text-sm border "+(!cat?'bg-navy3 text-white border-white/20':'bg-navy2 text-white/55 border-white/10')}>すべて</button>
-        {catsInSite.map(c=>{const on=c===cat;return <button key={c} onClick={()=>setCat(c)} className={"tap shrink-0 rounded-full px-4 py-1.5 text-sm border "+(on?'bg-navy3 text-white border-white/20':'bg-navy2 text-white/55 border-white/10')}>{c}</button>;})}
+      <div className="scroll-x overflow-x-auto flex gap-2 px-4 pb-2.5">
+        <button onClick={()=>setCat(null)} className={"tap shrink-0 rounded-full px-3.5 py-1.5 text-[13px] border "+(!cat?'bg-amber/15 text-ink border-amber/50 font-semibold':'bg-card text-sub border-line')}>すべて</button>
+        {catsInSite.map(c=>{const on=c===cat;return <button key={c} onClick={()=>setCat(c)} className={"tap shrink-0 rounded-full px-3.5 py-1.5 text-[13px] border "+(on?'bg-amber/15 text-ink border-amber/50 font-semibold':'bg-card text-sub border-line')}>{c}</button>;})}
       </div>
-      <div className="px-3 pb-2">
-        <div className="flex items-center justify-between bg-navy2 rounded-xl px-3 py-2 border border-white/10">
-          <span className="text-white/70 text-sm">{shown.length}枚{unexp>0 && <span className="text-amber"> / 未保存{unexp}</span>}</span>
-          <button onClick={()=>onExport(shown)} className="tap bg-amber text-navy text-sm font-black px-4 py-2 rounded-lg">💾 データを保存</button>
-        </div>
+      <div className="px-4 pb-2.5 flex items-center justify-between">
+        <span className="text-sub text-[13px]">{shown.length}枚{unexp>0 && <span className="text-amber font-semibold">・未保存 {unexp}</span>}</span>
+        <button onClick={()=>onExport(shown)} className="tap inline-flex items-center gap-1.5 bg-brand text-white text-[13px] font-bold pl-3 pr-3.5 py-2 rounded-full shadow-soft">
+          <Ic.share style={{width:15,height:15}}/> データを保存
+        </button>
       </div>
-      <div className="flex-1 overflow-y-auto px-2 pb-4">
-        <div className="grid grid-cols-3 gap-1.5">
-          {shown.map(p=>(
-            <button key={p.id} onClick={()=>onOpen(p)} className="relative block">
-              <img src={p.img} className="w-full aspect-square object-cover rounded-lg"/>
-              {p.exported
-                ? <div className="absolute top-1 left-1 bg-ok text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">✓保存済</div>
-                : <div className="absolute top-1 left-1 bg-amber text-navy text-[10px] font-bold px-1.5 py-0.5 rounded-full">未保存</div>}
-              <div className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[9px] px-1 py-0.5 rounded-b-lg leading-tight truncate text-left">
-                {p.cat}{p.sub?'／'+p.sub:''}<br/>{hm(p.ts)}
-              </div>
+      <div className="flex-1 overflow-y-auto px-1 pb-4">
+        <div className="grid grid-cols-3 gap-[3px]">
+          {shown.map((p,idx)=>(
+            <button key={p.id} onClick={()=>onOpen(shown,idx)} className="relative block bg-line/40 overflow-hidden">
+              <img src={p.img} className="w-full aspect-square object-cover"/>
+              {!p.exported && <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-amber ring-2 ring-white/70"></span>}
+              {p.exported && <span className="absolute top-1 left-1 text-white bg-ok/90 rounded-full p-0.5"><Ic.check style={{width:11,height:11}} w={3}/></span>}
             </button>
           ))}
         </div>
@@ -261,29 +269,61 @@ function Gallery({photos,reload,onExport,cats,onOpen}){
   );
 }
 
-/* ============ 大画面ビューア ============ */
-function Viewer({photo,cats,onClose,onDelete}){
-  if(!photo)return null;
+/* ============ 大画面ビューア（左右スワイプ・スワイプダウンで閉じる） ============ */
+function Viewer({list,index,cats,onClose,onDelete}){
+  const [i,setI]=useState(index);
+  const start=useRef(null);
+  const [dx,setDx]=useState(0);
+  const [dy,setDy]=useState(0);
+  useEffect(()=>{setI(index);},[index]);
+  if(!list||!list.length)return null;
+  const p=list[Math.max(0,Math.min(i,list.length-1))];
+
+  const onTS=e=>{const t=e.touches[0];start.current={x:t.clientX,y:t.clientY,t:Date.now()};};
+  const onTM=e=>{if(!start.current)return;const t=e.touches[0];const ddx=t.clientX-start.current.x;const ddy=t.clientY-start.current.y;
+    if(Math.abs(ddy)>Math.abs(ddx)&&ddy>0){setDy(ddy);setDx(0);}else{setDx(ddx);setDy(0);}};
+  const onTE=()=>{
+    if(dy>110){onClose();return;}
+    if(dx<-60 && i<list.length-1)setI(i+1);
+    else if(dx>60 && i>0)setI(i-1);
+    setDx(0);setDy(0);start.current=null;
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3">
-        <button onClick={onClose} className="tap text-white text-3xl leading-none">✕</button>
-        <span className="text-white/80 text-sm font-mono truncate px-2">{buildName(photo,cats)}.jpg</span>
-        <button onClick={()=>onDelete(photo)} className="tap text-red-300 text-sm font-bold">🗑 削除</button>
+    <div className="fixed inset-0 z-50 bg-black flex flex-col fadein" style={{opacity:dy>0?Math.max(.4,1-dy/400):1}}>
+      <div className="flex items-center justify-between px-3 py-3" style={{paddingTop:'calc(env(safe-area-inset-top) + 8px)'}}>
+        <button onClick={onClose} className="tap text-white/90 p-1.5"><Ic.close style={{width:26,height:26}}/></button>
+        <span className="text-white/55 text-[12px]">{i+1} / {list.length}</span>
+        <button onClick={()=>onDelete(p,i)} className="tap text-white/90 p-1.5"><Ic.trash style={{width:23,height:23}}/></button>
       </div>
-      <div className="flex-1 flex items-center justify-center px-2 min-h-0">
-        <img src={photo.img} className="max-w-full max-h-full object-contain rounded-lg"/>
+      <div className="flex-1 flex items-center justify-center min-h-0 overflow-hidden" onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}>
+        <img src={p.img} draggable={false} className="max-w-full max-h-full object-contain select-none"
+          style={{transform:'translate('+dx+'px,'+dy+'px)',transition:start.current?'none':'transform .25s'}}/>
       </div>
-      <div className="px-4 py-4 text-center">
-        <div className="text-white font-bold">{photo.cat}{photo.sub?' ＞ '+photo.sub:''}</div>
-        <div className="text-white/50 text-sm mt-1">📍{photo.site}　{ymd(photo.ts)} {hm(photo.ts)}　{photo.exported?'✓保存済':'未保存'}</div>
+      <div className="px-5 py-5 text-center" style={{paddingBottom:'calc(env(safe-area-inset-bottom) + 16px)'}}>
+        <div className="text-white font-bold text-[15px]">{p.cat}{p.sub?'　/　'+p.sub:''}</div>
+        <div className="text-white/45 text-[12px] mt-1.5 font-mono">{buildName(p,cats)}.jpg</div>
+        <div className="text-white/35 text-[12px] mt-0.5">{p.site}・{ymdJ(p.ts)} {hm(p.ts)}・{p.exported?'保存済':'未保存'}</div>
       </div>
     </div>
   );
 }
 
+/* ============ スワイプ削除できる行 ============ */
+function SwipeRow({children,onDelete}){
+  const [x,setX]=useState(0);
+  const start=useRef(null);
+  const onTS=e=>{start.current=e.touches[0].clientX;};
+  const onTM=e=>{if(start.current==null)return;const d=e.touches[0].clientX-start.current;setX(Math.max(-88,Math.min(0,(x<-10?-88:0)+d)));};
+  const onTE=()=>{setX(x<-44?-88:0);start.current=null;};
+  return <div className="swipe-wrap bg-danger">
+    <button onClick={onDelete} className="absolute right-0 top-0 h-full w-[88px] flex items-center justify-center text-white"><Ic.trash style={{width:20,height:20}}/></button>
+    <div className="swipe-row bg-card" style={{transform:'translateX('+x+'px)'}} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}>{children}</div>
+  </div>;
+}
+
 /* ============ 設定 ============ */
-function Settings({sites,setSites,cats,setCats,photos,reload,flash}){
+function Settings({sites,setSites,cats,setCats,useSub,setUseSub,photos,reload,flash}){
   const [name,setName]=useState('');
   const [sEdit,setSEdit]=useState(-1); const [sVal,setSVal]=useState('');
   const [openCat,setOpenCat]=useState(-1);
@@ -295,109 +335,117 @@ function Settings({sites,setSites,cats,setCats,photos,reload,flash}){
   const pCats=a=>{setCats(a);jset(LS_CATS,a);};
   const move=(arr,setter,i,d)=>{const j=i+d;if(j<0||j>=arr.length)return;const a=arr.slice();const t=a[i];a[i]=a[j];a[j]=t;setter(a);};
 
-  /* 現場 */
   const addSite=()=>{const n=name.trim();if(!n)return;if(sites.indexOf(n)>=0){alert('同じ現場があります');return;}pSites([n].concat(sites));setName('');};
   const saveSEdit=()=>{const n=sVal.trim();if(!n){setSEdit(-1);return;}const a=sites.slice();a[sEdit]=n;pSites(a);setSEdit(-1);};
   const delSite=s=>{if(confirm('現場「'+s+'」を消しますか？（撮影済み写真は残ります）'))pSites(sites.filter(x=>x!==s));};
 
-  /* 大分類 */
   const moveCat=(i,d)=>{const j=i+d;if(j<0||j>=cats.length)return;const a=cats.slice();const t=a[i];a[i]=a[j];a[j]=t;pCats(a);};
   const saveCEdit=()=>{const n=cVal.trim();if(!n){setCEdit(-1);return;}const a=cats.slice();a[cEdit]=Object.assign({},a[cEdit],{name:n});pCats(a);setCEdit(-1);};
   const delCat=i=>{if(confirm('大分類「'+cats[i].name+'」を消しますか？'))pCats(cats.filter((_,k)=>k!==i));};
-  const addCat=()=>{const n=prompt('新しい大分類の名前');if(n&&n.trim()){pCats(cats.concat([{name:n.trim(),subs:[]}]));}};
-
-  /* 小分類 */
+  const addCat=()=>{const n=prompt('新しい大分類の名前');if(n&&n.trim())pCats(cats.concat([{name:n.trim(),subs:[]}]));};
   const moveSub=(ci,si,d)=>{const j=si+d;const subs=cats[ci].subs;if(j<0||j>=subs.length)return;const ns=subs.slice();const t=ns[si];ns[si]=ns[j];ns[j]=t;const a=cats.slice();a[ci]=Object.assign({},a[ci],{subs:ns});pCats(a);};
   const saveSub=(ci,si)=>{const n=subVal.trim();if(!n){setSubEdit('');return;}const ns=cats[ci].subs.slice();ns[si]=n;const a=cats.slice();a[ci]=Object.assign({},a[ci],{subs:ns});pCats(a);setSubEdit('');};
   const delSub=(ci,si)=>{const ns=cats[ci].subs.filter((_,k)=>k!==si);const a=cats.slice();a[ci]=Object.assign({},a[ci],{subs:ns});pCats(a);};
-  const addSub=(ci)=>{const n=newSub.trim();if(!n)return;const ns=cats[ci].subs.concat([n]);const a=cats.slice();a[ci]=Object.assign({},a[ci],{subs:ns});pCats(a);setNewSub('');};
+  const addSub=(ci)=>{const n=newSub.trim();if(!n)return;const a=cats.slice();a[ci]=Object.assign({},a[ci],{subs:cats[ci].subs.concat([n])});pCats(a);setNewSub('');};
 
   const expCount=photos.filter(p=>p.exported).length;
   const clearExported=async()=>{
     if(!expCount){flash('保存済みの写真はありません');return;}
-    if(confirm('「保存済」の写真 '+expCount+'枚 をアプリから削除します。\n（端末の写真アプリ側は消えません）\nよろしいですか？')){
-      await dbDelMany(photos.filter(p=>p.exported).map(p=>p.id)); await reload(); flash(expCount+'枚 削除しました');
-    }
+    if(confirm('保存済みの写真 '+expCount+'枚 をアプリから削除します。\n（端末の写真アプリ側は消えません）')){
+      await dbDelMany(photos.filter(p=>p.exported).map(p=>p.id));await reload();flash(expCount+'枚 削除しました');}
   };
 
+  const Sec=({title,children,right})=>(
+    <div className="bg-card rounded-2xl shadow-soft overflow-hidden">
+      <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
+        <div className="text-ink font-bold text-[15px]">{title}</div>{right}
+      </div>
+      <div className="px-4 pb-4">{children}</div>
+    </div>
+  );
+
   return (
-    <div className="p-4 space-y-4 overflow-y-auto h-full">
-      {/* 現場 */}
-      <div className="bg-navy2 rounded-2xl p-4 border border-white/10">
-        <div className="text-white font-bold mb-2">🏗️ 工事現場</div>
+    <div className="p-4 space-y-3.5 overflow-y-auto h-full bg-bg">
+
+      <Sec title="工事現場">
         <div className="flex gap-2 mb-3">
           <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addSite()}
-            placeholder="例：田中様邸 新築" className="flex-1 bg-navy text-white rounded-xl px-3 py-3 border border-white/10 outline-none"/>
-          <button onClick={addSite} className="tap bg-amber text-navy font-black px-5 rounded-xl">追加</button>
+            placeholder="例：田中様邸 新築" className="flex-1 bg-bg text-ink rounded-xl px-3.5 py-3 border border-line outline-none focus:border-brand"/>
+          <button onClick={addSite} className="tap bg-brand text-white font-bold px-5 rounded-xl">追加</button>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {sites.map((s,i)=>(
-            <div key={s} className="bg-navy rounded-xl px-2 py-2 border border-white/5 flex items-center gap-1">
-              <div className="flex flex-col"><button onClick={()=>move(sites,pSites,i,-1)} className="tap text-white/40 text-xs px-1">▲</button><button onClick={()=>move(sites,pSites,i,1)} className="tap text-white/40 text-xs px-1">▼</button></div>
+            <div key={s} className="bg-bg rounded-xl px-2.5 py-2 flex items-center gap-2">
+              <div className="flex flex-col text-sub/50"><button onClick={()=>move(sites,pSites,i,-1)} className="tap"><Ic.up style={{width:15,height:15}}/></button><button onClick={()=>move(sites,pSites,i,1)} className="tap"><Ic.down style={{width:15,height:15}}/></button></div>
               {sEdit===i
-                ? <input autoFocus value={sVal} onChange={e=>setSVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveSEdit()} className="flex-1 bg-navy2 text-white rounded-lg px-2 py-2 border border-amber outline-none"/>
-                : <span className="flex-1 text-white truncate px-1">📍 {s}</span>}
-              {sEdit===i ? <button onClick={saveSEdit} className="tap text-ok text-sm font-bold px-2">保存</button>
-                : <button onClick={()=>{setSEdit(i);setSVal(s);}} className="tap text-white/60 text-sm px-2">編集</button>}
-              <button onClick={()=>delSite(s)} className="tap text-red-300 text-sm px-2">削除</button>
+                ? <input autoFocus value={sVal} onChange={e=>setSVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveSEdit()} className="flex-1 bg-card text-ink rounded-lg px-2.5 py-2 border border-brand outline-none"/>
+                : <span className="flex-1 text-ink truncate font-medium">{s}</span>}
+              {sEdit===i ? <button onClick={saveSEdit} className="tap text-ok font-bold text-[13px] px-2">保存</button>
+                : <button onClick={()=>{setSEdit(i);setSVal(s);}} className="tap text-sub px-1.5"><Ic.pencil style={{width:17,height:17}}/></button>}
+              <button onClick={()=>delSite(s)} className="tap text-danger/80 px-1.5"><Ic.trash style={{width:17,height:17}}/></button>
             </div>
           ))}
         </div>
-      </div>
+      </Sec>
 
-      {/* 工種（2段階） */}
-      <div className="bg-navy2 rounded-2xl p-4 border border-white/10">
-        <div className="flex items-center justify-between mb-1">
-          <div className="text-white font-bold">🔧 工種（大分類＞小分類）</div>
-          <button onClick={addCat} className="tap text-amber text-sm font-bold">＋大分類</button>
+      {/* 小分類の使用 切替 */}
+      <Sec title="小分類を使う">
+        <div className="flex items-center justify-between">
+          <p className="text-sub text-[13px] leading-relaxed pr-3">オンにすると工種を「大分類→小分類」の2段階で選べます。<br/>オフなら大分類だけでシンプルに使えます。</p>
+          <button onClick={()=>{const v=!useSub;setUseSub(v);jset(LS_USESUB,v);}}
+            className={"tap shrink-0 w-[52px] h-[31px] rounded-full relative transition-colors "+(useSub?'bg-ok':'bg-line')}>
+            <span className="absolute top-[3px] w-[25px] h-[25px] bg-white rounded-full shadow transition-all" style={{left:useSub?'24px':'3px'}}></span>
+          </button>
         </div>
-        <p className="text-white/45 text-xs mb-3">▲▼の順番が名前の番号になります。名前をタップで編集できます。</p>
-        <div className="space-y-2">
+      </Sec>
+
+      <Sec title="工種" right={<button onClick={addCat} className="tap inline-flex items-center gap-1 text-brand font-bold text-[13px]"><Ic.plus style={{width:16,height:16}}/>大分類</button>}>
+        <p className="text-sub text-[12px] mb-3 leading-relaxed">並び順が名前の番号になります（例：2_基礎_05_配筋）。名前は鉛筆マークで編集できます。</p>
+        <div className="space-y-1.5">
           {cats.map((c,ci)=>(
-            <div key={c.name+ci} className="bg-navy rounded-xl border border-white/5">
-              <div className="flex items-center gap-1 px-2 py-2">
-                <span className="text-amber font-black w-6 text-center">{ci+1}</span>
+            <div key={c.name+ci} className="bg-bg rounded-xl">
+              <div className="flex items-center gap-1.5 px-2.5 py-2">
+                <span className="text-brand font-bold w-5 text-center text-[14px]">{ci+1}</span>
                 {cEdit===ci
-                  ? <input autoFocus value={cVal} onChange={e=>setCVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveCEdit()} className="flex-1 bg-navy2 text-white rounded-lg px-2 py-1.5 border border-amber outline-none"/>
-                  : <button onClick={()=>setOpenCat(openCat===ci?-1:ci)} className="tap flex-1 text-left text-white font-bold truncate">{c.name} <span className="text-white/40 text-xs">({c.subs.length}) {openCat===ci?'▲':'▼'}</span></button>}
-                <button onClick={()=>moveCat(ci,-1)} className="tap text-white/40 text-sm px-1">▲</button>
-                <button onClick={()=>moveCat(ci,1)} className="tap text-white/40 text-sm px-1">▼</button>
-                {cEdit===ci ? <button onClick={saveCEdit} className="tap text-ok text-sm font-bold px-1">保存</button>
-                  : <button onClick={()=>{setCEdit(ci);setCVal(c.name);}} className="tap text-white/60 text-xs px-1">編集</button>}
-                <button onClick={()=>delCat(ci)} className="tap text-red-300 text-xs px-1">削除</button>
+                  ? <input autoFocus value={cVal} onChange={e=>setCVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveCEdit()} className="flex-1 bg-card text-ink rounded-lg px-2.5 py-1.5 border border-brand outline-none"/>
+                  : <button onClick={()=>setOpenCat(openCat===ci?-1:ci)} className="tap flex-1 text-left text-ink font-semibold truncate flex items-center gap-1.5">{c.name}<span className="text-sub/60 text-[12px] font-normal">{c.subs.length}</span><span className="text-sub/50">{openCat===ci?<Ic.up style={{width:14,height:14}}/>:<Ic.down style={{width:14,height:14}}/>}</span></button>}
+                <button onClick={()=>moveCat(ci,-1)} className="tap text-sub/50"><Ic.up style={{width:15,height:15}}/></button>
+                <button onClick={()=>moveCat(ci,1)} className="tap text-sub/50"><Ic.down style={{width:15,height:15}}/></button>
+                {cEdit===ci ? <button onClick={saveCEdit} className="tap text-ok font-bold text-[13px] px-1">保存</button>
+                  : <button onClick={()=>{setCEdit(ci);setCVal(c.name);}} className="tap text-sub px-1"><Ic.pencil style={{width:16,height:16}}/></button>}
+                <button onClick={()=>delCat(ci)} className="tap text-danger/80 px-1"><Ic.trash style={{width:16,height:16}}/></button>
               </div>
               {openCat===ci && <div className="px-3 pb-3 space-y-1.5">
                 {c.subs.map((s,si)=>(
-                  <div key={s+si} className="bg-navy2 rounded-lg px-2 py-1.5 flex items-center gap-1 border border-white/5">
-                    <span className="text-white/40 text-xs w-6 text-center">{p2(si+1)}</span>
+                  <div key={s+si} className="bg-card rounded-lg px-2.5 py-1.5 flex items-center gap-1.5 border border-line">
+                    <span className="text-sub/50 text-[12px] w-5 text-center">{p2(si+1)}</span>
                     {subEdit===ci+'-'+si
-                      ? <input autoFocus value={subVal} onChange={e=>setSubVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveSub(ci,si)} className="flex-1 bg-navy text-white rounded px-2 py-1 border border-amber outline-none text-sm"/>
-                      : <span className="flex-1 text-white/85 text-sm truncate">{s}</span>}
-                    <button onClick={()=>moveSub(ci,si,-1)} className="tap text-white/35 text-xs px-1">▲</button>
-                    <button onClick={()=>moveSub(ci,si,1)} className="tap text-white/35 text-xs px-1">▼</button>
-                    {subEdit===ci+'-'+si ? <button onClick={()=>saveSub(ci,si)} className="tap text-ok text-xs font-bold px-1">保存</button>
-                      : <button onClick={()=>{setSubEdit(ci+'-'+si);setSubVal(s);}} className="tap text-white/55 text-xs px-1">編集</button>}
-                    <button onClick={()=>delSub(ci,si)} className="tap text-red-300 text-xs px-1">✕</button>
+                      ? <input autoFocus value={subVal} onChange={e=>setSubVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveSub(ci,si)} className="flex-1 bg-bg text-ink rounded px-2 py-1 border border-brand outline-none text-[14px]"/>
+                      : <span className="flex-1 text-ink/85 text-[14px] truncate">{s}</span>}
+                    <button onClick={()=>moveSub(ci,si,-1)} className="tap text-sub/40"><Ic.up style={{width:14,height:14}}/></button>
+                    <button onClick={()=>moveSub(ci,si,1)} className="tap text-sub/40"><Ic.down style={{width:14,height:14}}/></button>
+                    {subEdit===ci+'-'+si ? <button onClick={()=>saveSub(ci,si)} className="tap text-ok font-bold text-[12px] px-1">保存</button>
+                      : <button onClick={()=>{setSubEdit(ci+'-'+si);setSubVal(s);}} className="tap text-sub px-0.5"><Ic.pencil style={{width:14,height:14}}/></button>}
+                    <button onClick={()=>delSub(ci,si)} className="tap text-danger/70 px-0.5"><Ic.close style={{width:15,height:15}}/></button>
                   </div>
                 ))}
-                <div className="flex gap-2 pt-1">
-                  <input value={openCat===ci?newSub:''} onChange={e=>setNewSub(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addSub(ci)} placeholder="小分類を追加" className="flex-1 bg-navy text-white rounded-lg px-2 py-1.5 border border-white/10 outline-none text-sm"/>
-                  <button onClick={()=>addSub(ci)} className="tap bg-amber/90 text-navy font-bold px-3 rounded-lg text-sm">追加</button>
+                <div className="flex gap-2 pt-0.5">
+                  <input value={openCat===ci?newSub:''} onChange={e=>setNewSub(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addSub(ci)} placeholder="小分類を追加" className="flex-1 bg-card text-ink rounded-lg px-2.5 py-1.5 border border-line outline-none text-[14px] focus:border-brand"/>
+                  <button onClick={()=>addSub(ci)} className="tap bg-brand text-white font-bold px-3.5 rounded-lg text-[13px]">追加</button>
                 </div>
               </div>}
             </div>
           ))}
         </div>
-        <button onClick={()=>{if(confirm('工種を最初の状態（木造在来の標準）に戻しますか？'))pCats(JSON.parse(JSON.stringify(DEFAULT_CATS)));}} className="tap text-white/50 text-xs mt-3 underline">最初の状態に戻す</button>
-      </div>
+        <button onClick={()=>{if(confirm('工種を最初の状態（木造在来の標準）に戻しますか？'))pCats(JSON.parse(JSON.stringify(DEFAULT_CATS)));}} className="tap text-sub text-[12px] mt-3 underline">最初の状態に戻す</button>
+      </Sec>
 
-      {/* 容量 */}
-      <div className="bg-navy2 rounded-2xl p-4 border border-white/10">
-        <div className="text-white font-bold mb-1">🧹 容量を空ける</div>
-        <p className="text-white/55 text-xs mb-3 leading-relaxed">「データを保存」で書き出した（✓保存済の）写真をまとめて消すと容量が空きます。端末の写真アプリ側は消えません。</p>
-        <button onClick={clearExported} className="tap w-full bg-navy border border-red-400/40 text-red-200 font-bold py-3 rounded-xl">保存済みの写真をまとめて削除（{expCount}枚）</button>
-      </div>
-      <div className="bg-navy2/50 rounded-2xl p-4 border border-white/10 text-white/45 text-xs leading-relaxed">外部送信なし・ログインなし・連携設定なし。撮った瞬間に名前がつき、現場ごとに整理されます。</div>
+      <Sec title="容量を空ける">
+        <p className="text-sub text-[12px] mb-3 leading-relaxed">「データを保存」で書き出した写真をまとめて削除すると容量が空きます。端末の写真アプリ側は消えません。</p>
+        <button onClick={clearExported} className="tap w-full bg-bg border border-danger/30 text-danger font-bold py-3 rounded-xl">保存済みを削除（{expCount}枚）</button>
+      </Sec>
+
+      <p className="text-center text-sub/50 text-[11px] px-6 leading-relaxed pt-1">外部送信なし・ログインなし・連携設定なし。<br/>撮った瞬間に名前がつき、現場ごとに整理されます。</p>
     </div>
   );
 }
@@ -407,13 +455,14 @@ function App(){
   const [tab,setTab]=useState('cap');
   const [sites,setSites]=useState(loadSites());
   const [cats,setCats]=useState(loadCats());
+  const [useSub,setUseSub]=useState(loadUseSub());
   const last=jget(LS_LAST,{});
   const [site,setSite]=useState(last.site||loadSites()[0]||'');
   const [cat,setCat]=useState(last.cat||loadCats()[0].name);
   const [sub,setSub]=useState(last.sub||'');
   const [photos,setPhotos]=useState([]);
   const [toast,setToast]=useState('');
-  const [viewer,setViewer]=useState(null);
+  const [viewer,setViewer]=useState(null); /* {list,index} */
 
   const reload=useCallback(async()=>{setPhotos(await dbAll());},[]);
   useEffect(()=>{reload();},[reload]);
@@ -423,9 +472,8 @@ function App(){
 
   const flash=m=>{setToast(m);setTimeout(()=>setToast(''),1800);};
   const todayStr=ymd(Date.now());
-  const todayCount=photos.filter(p=>p.site===site&&p.cat===cat&&(sub?p.sub===sub:true)&&ymd(p.ts)===todayStr).length;
+  const todayCount=photos.filter(p=>p.site===site&&p.cat===cat&&((useSub&&sub)?p.sub===sub:true)&&ymd(p.ts)===todayStr).length;
 
-  /* 連番：現場×大分類×小分類ごとの通し番号 */
   const seqMap={};
   photos.slice().sort((a,b)=>a.ts-b.ts).forEach(p=>{const k=p.site+'|'+p.cat+'|'+(p.sub||'');seqMap[k]=(seqMap[k]||0)+1;p._seq=seqMap[k];});
 
@@ -435,38 +483,47 @@ function App(){
       const filesArr=list.map(p=>new File([dataURLtoBlob(p.img)], buildName(p,cats)+'.jpg', {type:'image/jpeg'}));
       if(navigator.canShare && navigator.canShare({files:filesArr})){
         await navigator.share({files:filesArr,title:'現場写真'});
-        for(const p of list){await dbPut(Object.assign({},p,{exported:true}));}
-        await reload(); flash(list.length+'枚 書き出しました');
+        for(const p of list){await dbPut(Object.assign({},p,{exported:true}));} await reload(); flash(list.length+'枚 書き出しました');
       }else{
         filesArr.forEach(f=>{const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;a.click();});
-        for(const p of list){await dbPut(Object.assign({},p,{exported:true}));}
-        await reload(); flash('ダウンロードしました');
+        for(const p of list){await dbPut(Object.assign({},p,{exported:true}));} await reload(); flash('ダウンロードしました');
       }
     }catch(err){ if(String(err).indexOf('Abort')<0) flash('保存を中止しました'); }
   };
 
-  const delPhoto=async(p)=>{ if(confirm('この写真を削除しますか？')){await dbDel(p.id);await reload();setViewer(null);} };
+  const openViewer=(list,index)=>setViewer({list,index});
+  const delFromViewer=async(p,i)=>{
+    await dbDel(p.id);
+    const nl=viewer.list.filter(x=>x.id!==p.id);
+    await reload();
+    if(!nl.length){setViewer(null);} else {setViewer({list:nl,index:Math.min(i,nl.length-1)});}
+  };
+
+  const TabBtn=({id,Icon,label})=>{const on=tab===id;
+    return <button onClick={()=>setTab(id)} className={"tap flex-1 flex flex-col items-center gap-1 py-2 "+(on?'text-amber':'text-sub/55')}>
+      <Icon style={{width:25,height:25}} w={on?2:1.7}/><span className="text-[11px] font-semibold">{label}</span></button>;};
 
   return (
-    <div className="h-full flex flex-col bg-navy">
-      <div className="bg-navy px-4 py-2.5 flex items-center justify-between border-b border-white/5">
-        <div className="flex items-center gap-2"><span className="text-amber font-black text-xs tracking-wide">HEALTH ARCHI</span><span className="text-white/30">/</span><span className="text-white font-bold text-sm">現場写真</span></div>
-        <span className="text-white/30 text-[10px]">T008</span>
+    <div className="h-full flex flex-col bg-bg">
+      <div className="bg-card/95 backdrop-blur px-4 py-3 flex items-center justify-between border-b border-line">
+        <div className="flex items-center gap-2">
+          <span className="text-brand font-black text-[12px] tracking-wider">HEALTH ARCHI</span>
+          <span className="text-line">|</span>
+          <span className="text-ink font-bold text-[14px]">現場写真</span>
+        </div>
       </div>
       <div className="flex-1 overflow-hidden">
-        {tab==='cap' && <Capture sites={sites} site={site} setSite={setSite} cats={cats} cat={cat} setCat={setCat} sub={sub} setSub={setSub} onShot={reload} todayCount={todayCount} goSet={()=>setTab('set')}/>}
-        {tab==='gal' && <Gallery photos={photos} reload={reload} onExport={exportPhotos} cats={cats} onOpen={setViewer}/>}
-        {tab==='set' && <Settings sites={sites} setSites={setSites} cats={cats} setCats={setCats} photos={photos} reload={reload} flash={flash}/>}
+        {tab==='cap' && <Capture sites={sites} site={site} setSite={setSite} cats={cats} cat={cat} setCat={setCat} sub={sub} setSub={setSub} useSub={useSub} onShot={reload} todayCount={todayCount} goSet={()=>setTab('set')}/>}
+        {tab==='gal' && <Gallery photos={photos} reload={reload} onExport={exportPhotos} cats={cats} onOpen={openViewer}/>}
+        {tab==='set' && <Settings sites={sites} setSites={setSites} cats={cats} setCats={setCats} useSub={useSub} setUseSub={setUseSub} photos={photos} reload={reload} flash={flash}/>}
       </div>
-      <div className="bg-navy border-t border-white/10 flex">
-        {[['cap','📷','撮影'],['gal','🗂️','写真一覧'],['set','⚙️','設定']].map(arr=>{
-          const id=arr[0],ic=arr[1],lb=arr[2],on=tab===id;
-          return <button key={id} onClick={()=>setTab(id)} className={"tap flex-1 flex flex-col items-center gap-0.5 py-2.5 "+(on?'text-amber':'text-white/50')}>
-            <span className="text-2xl leading-none">{ic}</span><span className="text-[11px] font-bold">{lb}</span></button>;
-        })}
+      <div className="bg-card/95 backdrop-blur border-t border-line flex">
+        <TabBtn id="cap" Icon={Ic.camera} label="撮影"/>
+        <TabBtn id="gal" Icon={Ic.grid} label="写真一覧"/>
+        <TabBtn id="set" Icon={Ic.gear} label="設定"/>
       </div>
-      {viewer && <Viewer photo={viewer} cats={cats} onClose={()=>setViewer(null)} onDelete={delPhoto}/>}
-      {toast && <div className="pop fixed bottom-24 left-1/2 -translate-x-1/2 bg-ok text-white px-5 py-2.5 rounded-full font-bold shadow-xl z-50">✓ {toast}</div>}
+      {viewer && <Viewer list={viewer.list} index={viewer.index} cats={cats} onClose={()=>setViewer(null)} onDelete={delFromViewer}/>}
+      {toast && <div className="toastin fixed bottom-24 left-1/2 bg-ink text-white px-5 py-2.5 rounded-full font-semibold text-[14px] shadow-lg z-50 inline-flex items-center gap-2"><Ic.check style={{width:16,height:16}}/>{toast}</div>}
     </div>
   );
 }
