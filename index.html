@@ -32,6 +32,7 @@
   .flash{animation:flash .35s ease}
   .scroll-x{-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .scroll-x::-webkit-scrollbar{display:none}
+  select{background-image:none;}
 </style>
 </head>
 <body>
@@ -39,8 +40,8 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
-/* ===== 工種テンプレ（建設標準・最初から内蔵） ===== */
-const WORK_TYPES = ['基礎','配筋','型枠','躯体','設備','内装','外構','完了'];
+/* ===== 既定の工種（建設標準・内蔵）。設定で並べ替え・編集できる ===== */
+const DEFAULT_WT = ['基礎','配筋','型枠','躯体','設備','内装','外構','完了'];
 
 /* ===== 保存（IndexedDB=端末内の大容量保管庫・外部送信なし） ===== */
 const DB='ha_genba2', STORE='photos', VER=1;
@@ -50,13 +51,17 @@ function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB,VER);
 async function dbPut(rec){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).put(rec);t.oncomplete=res;t.onerror=e=>rej(e.target.error);});}
 async function dbAll(){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction(STORE,'readonly');const q=t.objectStore(STORE).getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=e=>rej(e.target.error);});}
 async function dbDel(id){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).delete(id);t.oncomplete=res;t.onerror=e=>rej(e.target.error);});}
+async function dbDelMany(ids){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction(STORE,'readwrite');const os=t.objectStore(STORE);ids.forEach(id=>os.delete(id));t.oncomplete=res;t.onerror=e=>rej(e.target.error);});}
 
-/* 現場名は設定（localStorage=軽量保存） */
-const LS_SITES='ha2_sites', LS_LAST='ha2_last';
-const loadSites=()=>{try{return JSON.parse(localStorage.getItem(LS_SITES))||[];}catch(e){return[];}};
-const saveSites=a=>localStorage.setItem(LS_SITES,JSON.stringify(a));
+/* ===== 設定（localStorage=軽量保存） ===== */
+const LS_SITES='ha2_sites', LS_WT='ha2_wt', LS_NAME='ha2_namefmt', LS_LAST='ha2_last';
+const jget=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v;}catch(e){return d;}};
+const jset=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+const loadSites=()=>jget(LS_SITES,[]);
+const loadWT=()=>{const v=jget(LS_WT,null);return (v&&v.length)?v:DEFAULT_WT.slice();};
+const loadNameFmt=()=>jget(LS_NAME,'A'); /* A=番号_工種_日付_連番 / B=工種_日付_連番 / C=日付_工種_連番 */
 
-/* 画像縮小（保存容量を抑える・端末が重くならないように） */
+/* 画像縮小 */
 function shrink(file,max=1600){return new Promise(res=>{const img=new Image();
   img.onload=()=>{let w=img.width,h=img.height;if(Math.max(w,h)>max){const r=max/Math.max(w,h);w=Math.round(w*r);h=Math.round(h*r);}
     const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);res(c.toDataURL('image/jpeg',0.82));};
@@ -67,14 +72,23 @@ const p3=n=>String(n).padStart(3,'0');
 const ymd=ts=>{const d=new Date(ts);return ''+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate());};
 const hm=ts=>{const d=new Date(ts);return p2(d.getHours())+':'+p2(d.getMinutes());};
 
-/* data:URL → Blob（カメラロール書き出し用） */
+/* ファイル名生成（命名形式＋工種番号に対応） */
+function buildName(p,fmt,wtList){
+  const no=wtList.indexOf(p.wt); const num=(no>=0?no+1:0);
+  const seq=p3(p._seq||1); const date=ymd(p.ts);
+  if(fmt==='A') return (num>0?num+'_':'')+p.wt+'_'+date+'_'+seq;
+  if(fmt==='C') return date+'_'+p.wt+'_'+seq;
+  return p.wt+'_'+date+'_'+seq; /* B */
+}
+
 function dataURLtoBlob(durl){const a=durl.split(',');const mime=a[0].match(/:(.*?);/)[1];const bin=atob(a[1]);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:mime});}
 
-/* ============ 撮影画面（連写・ノールック） ============ */
-function Capture({sites,site,setSite,wt,setWt,onShot,todayCount}){
+/* ============ 撮影画面 ============ */
+function Capture({sites,site,setSite,wtList,wt,setWt,onShot,todayCount,goSite}){
   const fileRef=useRef();
   const [flash,setFlash]=useState(false);
   const [busy,setBusy]=useState(false);
+  const [pick,setPick]=useState(false);
 
   const onPick=async e=>{
     const files=[].slice.call(e.target.files||[]);
@@ -94,7 +108,8 @@ function Capture({sites,site,setSite,wt,setWt,onShot,todayCount}){
     return <div className="flex flex-col items-center justify-center h-full px-8 text-center">
       <div className="text-6xl mb-4">🏗️</div>
       <p className="text-white font-bold text-lg mb-2">まず現場を1つ登録しましょう</p>
-      <p className="text-white/60 text-sm mb-6">下の「現場」タブで現場名を追加すると、撮影が始められます。</p>
+      <p className="text-white/60 text-sm mb-6">下の「設定」で現場名を追加すると、撮影が始められます。</p>
+      <button onClick={goSite} className="tap bg-amber text-navy font-black px-6 py-3 rounded-2xl">⚙️ 設定をひらく</button>
     </div>;
   }
 
@@ -102,23 +117,23 @@ function Capture({sites,site,setSite,wt,setWt,onShot,todayCount}){
     <div className="flex flex-col h-full select-none">
       {flash && <div className="flash fixed inset-0 bg-white z-50 pointer-events-none"/>}
 
+      {/* 現在の現場：タップで一覧から選ぶ（分かりやすく改善） */}
       <div className="px-4 pt-3">
         <div className="text-white/50 text-[11px] font-bold mb-1">いま撮ると、ここに入ります</div>
-        <div className="bg-navy2 rounded-2xl px-4 py-3 border border-white/10">
-          <div className="flex items-center gap-2">
-            <span className="text-amber text-lg">📍</span>
-            <select value={site} onChange={e=>setSite(e.target.value)}
-              className="flex-1 bg-transparent text-white text-lg font-bold appearance-none outline-none">
-              {sites.map(s=><option key={s} value={s} className="text-black">{s}</option>)}
-            </select>
-          </div>
-        </div>
+        <button onClick={()=>setPick(true)} className="tap w-full bg-navy2 rounded-2xl px-4 py-3 border border-white/10 flex items-center justify-between">
+          <span className="flex items-center gap-2 min-w-0">
+            <span className="text-amber text-lg shrink-0">📍</span>
+            <span className="text-white text-lg font-bold truncate">{site}</span>
+          </span>
+          <span className="text-white/45 text-sm shrink-0">現場を選ぶ ▾</span>
+        </button>
       </div>
 
+      {/* 工種：横スクロールの大チップ */}
       <div className="pt-3">
         <div className="px-4 text-white/50 text-[11px] font-bold mb-1">工種</div>
         <div className="scroll-x overflow-x-auto flex gap-2 px-4 pb-1">
-          {WORK_TYPES.map(w=>{
+          {wtList.map(w=>{
             const on=wt===w;
             return <button key={w} onClick={()=>setWt(w)}
               className={"tap shrink-0 rounded-full px-5 py-2.5 font-bold text-base border "+(on?'bg-amber text-navy border-amber':'bg-navy2 text-white/75 border-white/10')}>
@@ -128,6 +143,7 @@ function Capture({sites,site,setSite,wt,setWt,onShot,todayCount}){
         </div>
       </div>
 
+      {/* 巨大シャッター */}
       <div className="flex-1 flex flex-col items-center justify-center px-6">
         <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={onPick}/>
         <button disabled={busy} onClick={()=>fileRef.current.click()}
@@ -146,12 +162,29 @@ function Capture({sites,site,setSite,wt,setWt,onShot,todayCount}){
           今日の <b className="text-amber">{wt}</b>：<b className="text-white text-base">{todayCount}</b> 枚 撮影
         </div>
       </div>
+
+      {/* 現場選択シート */}
+      {pick && <div className="fixed inset-0 z-40 bg-black/50 flex items-end" onClick={()=>setPick(false)}>
+        <div className="w-full bg-navy rounded-t-3xl border-t border-white/10 max-h-[70%] overflow-y-auto p-4" onClick={e=>e.stopPropagation()}>
+          <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-3"></div>
+          <div className="text-white font-bold mb-2 px-1">現場を選ぶ</div>
+          <div className="space-y-2">
+            {sites.map(s=>{
+              const on=s===site;
+              return <button key={s} onClick={()=>{setSite(s);setPick(false);}}
+                className={"tap w-full text-left rounded-xl px-4 py-3 border flex items-center justify-between "+(on?'bg-amber text-navy border-amber font-bold':'bg-navy2 text-white border-white/10')}>
+                <span className="truncate">📍 {s}</span>{on && <span>✓</span>}
+              </button>;
+            })}
+          </div>
+        </div>
+      </div>}
     </div>
   );
 }
 
-/* ============ 探す画面（現場→工種→日付で3タップ） ============ */
-function Find({photos,reload,onExport}){
+/* ============ 探す画面 ============ */
+function Find({photos,reload,onExport,fmt,wtList}){
   const [site,setSite]=useState(null);
   const [wt,setWt]=useState(null);
   const sites=Array.from(new Set(photos.map(p=>p.site)));
@@ -161,11 +194,11 @@ function Find({photos,reload,onExport}){
   if(!photos.length) return <div className="flex flex-col items-center justify-center h-full px-8 text-center">
     <div className="text-6xl mb-4">🔍</div>
     <p className="text-white font-bold text-lg mb-1">まだ写真がありません</p>
-    <p className="text-white/55 text-sm">「撮影」タブで撮ると、ここで現場ごとに探せます。</p>
+    <p className="text-white/55 text-sm">「撮影」で撮ると、ここで現場ごとに探せます。</p>
   </div>;
 
   const sp=photos.filter(p=>p.site===site);
-  const wtsInSite=WORK_TYPES.filter(w=>sp.some(p=>p.wt===w));
+  const wtsInSite=wtList.filter(w=>sp.some(p=>p.wt===w));
   const shown=(wt?sp.filter(p=>p.wt===wt):sp).sort((a,b)=>b.ts-a.ts);
   const unexp=shown.filter(p=>!p.exported).length;
 
@@ -208,8 +241,8 @@ function Find({photos,reload,onExport}){
                 ? <div className="absolute top-1 left-1 bg-ok text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">✓保存済</div>
                 : <div className="absolute top-1 left-1 bg-amber text-navy text-[10px] font-bold px-1.5 py-0.5 rounded-full">未保存</div>}
               <button onClick={()=>del(p)} className="tap absolute top-1 right-1 bg-black/55 text-white w-6 h-6 rounded-full text-xs">✕</button>
-              <div className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[9px] px-1 py-0.5 rounded-b-lg leading-tight">
-                {p.wt}_{ymd(p.ts)}<br/>{hm(p.ts)}
+              <div className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[9px] px-1 py-0.5 rounded-b-lg leading-tight truncate">
+                {buildName(p,fmt,wtList)}
               </div>
             </div>
           ))}
@@ -219,38 +252,122 @@ function Find({photos,reload,onExport}){
   );
 }
 
-/* ============ 現場（登録・シンプル） ============ */
-function Sites({sites,setSites}){
+/* ============ 設定画面（新設） ============ */
+function Settings({sites,setSites,wtList,setWtList,fmt,setFmt,photos,reload,flash}){
   const [name,setName]=useState('');
-  const add=()=>{const n=name.trim();if(!n)return;if(sites.indexOf(n)>=0){alert('同じ現場があります');return;}const a=[n].concat(sites);setSites(a);saveSites(a);setName('');};
-  const del=s=>{if(confirm('現場「'+s+'」を一覧から消しますか？\n（撮影済みの写真は消えません）')){const a=sites.filter(x=>x!==s);setSites(a);saveSites(a);}};
+  const [editIdx,setEditIdx]=useState(-1);
+  const [editVal,setEditVal]=useState('');
+
+  const persistSites=a=>{setSites(a);jset(LS_SITES,a);};
+  const persistWT=a=>{setWtList(a);jset(LS_WT,a);};
+
+  /* 現場：追加 */
+  const addSite=()=>{const n=name.trim();if(!n)return;if(sites.indexOf(n)>=0){alert('同じ現場があります');return;}persistSites([n].concat(sites));setName('');};
+  /* 現場：編集確定 */
+  const saveEdit=()=>{const n=editVal.trim();if(!n){setEditIdx(-1);return;}const a=sites.slice();a[editIdx]=n;persistSites(a);setEditIdx(-1);};
+  /* 現場：削除 */
+  const delSite=s=>{if(confirm('現場「'+s+'」を一覧から消しますか？\n（撮影済みの写真は消えません）'))persistSites(sites.filter(x=>x!==s));};
+  /* 並べ替え（上/下） */
+  const move=(arr,setter,i,dir)=>{const j=i+dir;if(j<0||j>=arr.length)return;const a=arr.slice();const t=a[i];a[i]=a[j];a[j]=t;setter(a);};
+
+  /* 保存済み一括削除 */
+  const expCount=photos.filter(p=>p.exported).length;
+  const clearExported=async()=>{
+    if(!expCount){flash('保存済みの写真はありません');return;}
+    if(confirm('「保存済」の写真 '+expCount+'枚 をアプリから削除します。\n（写真アプリに書き出した分なので、端末の写真は消えません）\nよろしいですか？')){
+      await dbDelMany(photos.filter(p=>p.exported).map(p=>p.id));
+      await reload(); flash(expCount+'枚 削除しました');
+    }
+  };
+
+  const fmtSample={A:'1_基礎_'+ymd(Date.now())+'_001', B:'基礎_'+ymd(Date.now())+'_001', C:ymd(Date.now())+'_基礎_001'};
+  const fmtLabel={A:'番号＋工種＋日付＋連番', B:'工種＋日付＋連番', C:'日付＋工種＋連番'};
+
   return (
     <div className="p-4 space-y-4 overflow-y-auto h-full">
+
+      {/* 現場 */}
       <div className="bg-navy2 rounded-2xl p-4 border border-white/10">
-        <div className="text-white font-bold mb-2">現場を追加</div>
-        <div className="flex gap-2">
-          <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()}
+        <div className="text-white font-bold mb-2">🏗️ 工事現場</div>
+        <div className="flex gap-2 mb-3">
+          <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addSite()}
             placeholder="例：田中様邸 新築" className="flex-1 bg-navy text-white rounded-xl px-3 py-3 border border-white/10 outline-none"/>
-          <button onClick={add} className="tap bg-amber text-navy font-black px-5 rounded-xl">追加</button>
+          <button onClick={addSite} className="tap bg-amber text-navy font-black px-5 rounded-xl">追加</button>
         </div>
-        <p className="text-white/45 text-xs mt-2">工種（基礎・配筋・型枠…）は最初から入っているので、追加するのは現場名だけです。</p>
-      </div>
-      <div className="bg-navy2 rounded-2xl p-4 border border-white/10">
-        <div className="text-white font-bold mb-2">登録済みの現場</div>
         {!sites.length && <p className="text-white/45 text-sm">まだありません。上から追加してください。</p>}
         <div className="space-y-2">
-          {sites.map(s=>(
-            <div key={s} className="flex items-center justify-between bg-navy rounded-xl px-3 py-3 border border-white/5">
-              <span className="text-white">📍 {s}</span>
-              <button onClick={()=>del(s)} className="tap text-red-300 text-sm font-bold">削除</button>
+          {sites.map((s,i)=>(
+            <div key={s} className="bg-navy rounded-xl px-2 py-2 border border-white/5 flex items-center gap-1">
+              <div className="flex flex-col">
+                <button onClick={()=>move(sites,persistSites,i,-1)} className="tap text-white/40 text-xs leading-none px-1">▲</button>
+                <button onClick={()=>move(sites,persistSites,i,1)} className="tap text-white/40 text-xs leading-none px-1">▼</button>
+              </div>
+              {editIdx===i
+                ? <input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveEdit()}
+                    className="flex-1 bg-navy2 text-white rounded-lg px-2 py-2 border border-amber outline-none"/>
+                : <span className="flex-1 text-white truncate px-1">📍 {s}</span>}
+              {editIdx===i
+                ? <button onClick={saveEdit} className="tap text-ok text-sm font-bold px-2">保存</button>
+                : <button onClick={()=>{setEditIdx(i);setEditVal(s);}} className="tap text-white/60 text-sm px-2">編集</button>}
+              <button onClick={()=>delSite(s)} className="tap text-red-300 text-sm px-2">削除</button>
             </div>
           ))}
         </div>
       </div>
-      <div className="bg-navy2/50 rounded-2xl p-4 border border-white/10 text-white/55 text-xs leading-relaxed">
-        <b className="text-amber">このアプリの考え方</b><br/>
-        写真はすべてこの端末の中だけに保存され、外部には送りません。撮った瞬間に名前（工種＋日付＋連番）がつき、現場ごとに整理済みになります。
-        会社のパソコンへ移したいときは「探す」画面で「写真アプリに保存」を押すだけ。難しい連携設定はありません。
+
+      {/* 写真の名前の付け方 */}
+      <div className="bg-navy2 rounded-2xl p-4 border border-white/10">
+        <div className="text-white font-bold mb-1">🏷️ 写真の名前の付け方</div>
+        <p className="text-white/45 text-xs mb-3">タップで選べます。今ある写真にもすぐ反映されます。</p>
+        <div className="space-y-2">
+          {['A','B','C'].map(k=>{
+            const on=fmt===k;
+            return <button key={k} onClick={()=>{setFmt(k);jset(LS_NAME,k);}}
+              className={"tap w-full text-left rounded-xl px-3 py-3 border "+(on?'bg-amber/15 border-amber':'bg-navy border-white/10')}>
+              <div className="flex items-center justify-between">
+                <span className={"text-sm font-bold "+(on?'text-amber':'text-white/80')}>{fmtLabel[k]}</span>
+                {on && <span className="text-amber">✓</span>}
+              </div>
+              <div className="text-white/55 text-xs mt-0.5 font-mono">{fmtSample[k]}.jpg</div>
+              {k==='A' && <div className="text-white/35 text-[11px] mt-1">※ パソコンのフォルダで工種の順に並びます（おすすめ）</div>}
+            </button>;
+          })}
+        </div>
+      </div>
+
+      {/* 工種の並べ替え */}
+      <div className="bg-navy2 rounded-2xl p-4 border border-white/10">
+        <div className="text-white font-bold mb-1">🔧 工種の順番</div>
+        <p className="text-white/45 text-xs mb-3">この順番が、名前の頭の番号になります（基礎を1番上にすると「1_基礎」）。</p>
+        <div className="space-y-2">
+          {wtList.map((w,i)=>(
+            <div key={w} className="bg-navy rounded-xl px-3 py-2.5 border border-white/5 flex items-center gap-2">
+              <span className="text-amber font-black w-6 text-center">{i+1}</span>
+              <span className="flex-1 text-white">{w}</span>
+              <div className="flex gap-1">
+                <button onClick={()=>move(wtList,persistWT,i,-1)} className="tap text-white/50 text-base px-1">▲</button>
+                <button onClick={()=>move(wtList,persistWT,i,1)} className="tap text-white/50 text-base px-1">▼</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button onClick={()=>{if(confirm('工種の順番を最初の状態に戻しますか？')){persistWT(DEFAULT_WT.slice());}}}
+          className="tap text-white/50 text-xs mt-3 underline">最初の順番に戻す</button>
+      </div>
+
+      {/* 容量・保存済み削除 */}
+      <div className="bg-navy2 rounded-2xl p-4 border border-white/10">
+        <div className="text-white font-bold mb-1">🧹 容量を空ける</div>
+        <p className="text-white/55 text-xs mb-3 leading-relaxed">
+          写真は端末の中だけに保存されます。「写真アプリに保存」で書き出した（✓保存済の）写真は、ここでまとめて消すと容量が空きます。端末の写真アプリ側は消えません。
+        </p>
+        <button onClick={clearExported} className="tap w-full bg-navy border border-red-400/40 text-red-200 font-bold py-3 rounded-xl">
+          保存済みの写真をまとめて削除（{expCount}枚）
+        </button>
+      </div>
+
+      <div className="bg-navy2/50 rounded-2xl p-4 border border-white/10 text-white/45 text-xs leading-relaxed">
+        外部送信なし・ログインなし・連携設定なし。撮った瞬間に名前がつき、現場ごとに整理されます。
       </div>
     </div>
   );
@@ -260,43 +377,41 @@ function Sites({sites,setSites}){
 function App(){
   const [tab,setTab]=useState('cap');
   const [sites,setSites]=useState(loadSites());
-  const last=(function(){try{return JSON.parse(localStorage.getItem(LS_LAST))||{};}catch(e){return{};}})();
+  const [wtList,setWtList]=useState(loadWT());
+  const [fmt,setFmt]=useState(loadNameFmt());
+  const last=jget(LS_LAST,{});
   const [site,setSite]=useState(last.site||loadSites()[0]||'');
-  const [wt,setWt]=useState(last.wt||WORK_TYPES[0]);
+  const [wt,setWt]=useState(last.wt||loadWT()[0]);
   const [photos,setPhotos]=useState([]);
   const [toast,setToast]=useState('');
 
   const reload=useCallback(async()=>{setPhotos(await dbAll());},[]);
   useEffect(()=>{reload();},[reload]);
-  useEffect(()=>{localStorage.setItem(LS_LAST,JSON.stringify({site:site,wt:wt}));},[site,wt]);
+  useEffect(()=>{jset(LS_LAST,{site:site,wt:wt});},[site,wt]);
   useEffect(()=>{if(sites.length&&sites.indexOf(site)<0)setSite(sites[0]);},[sites]);
+  useEffect(()=>{if(wtList.length&&wtList.indexOf(wt)<0)setWt(wtList[0]);},[wtList]);
 
   const flash=m=>{setToast(m);setTimeout(()=>setToast(''),1800);};
 
   const todayStr=ymd(Date.now());
   const todayCount=photos.filter(p=>p.site===site&&p.wt===wt&&ymd(p.ts)===todayStr).length;
 
+  /* 連番（現場×工種ごとの通し番号） */
   const seqMap={};
   photos.slice().sort((a,b)=>a.ts-b.ts).forEach(p=>{const k=p.site+'|'+p.wt;seqMap[k]=(seqMap[k]||0)+1;p._seq=seqMap[k];});
 
   const exportPhotos=async(list)=>{
     if(!list.length){flash('保存する写真がありません');return;}
     try{
-      const filesArr=list.map(p=>{
-        const blob=dataURLtoBlob(p.img);
-        const name=p.wt+'_'+ymd(p.ts)+'_'+p3(p._seq||1)+'.jpg';
-        return new File([blob],name,{type:'image/jpeg'});
-      });
+      const filesArr=list.map(p=>new File([dataURLtoBlob(p.img)], buildName(p,fmt,wtList)+'.jpg', {type:'image/jpeg'}));
       if(navigator.canShare && navigator.canShare({files:filesArr})){
         await navigator.share({files:filesArr,title:'現場写真'});
         for(const p of list){await dbPut(Object.assign({},p,{exported:true}));}
-        await reload();
-        flash(list.length+'枚 書き出しました');
+        await reload(); flash(list.length+'枚 書き出しました');
       }else{
         filesArr.forEach(f=>{const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;a.click();});
         for(const p of list){await dbPut(Object.assign({},p,{exported:true}));}
-        await reload();
-        flash('ダウンロードしました');
+        await reload(); flash('ダウンロードしました');
       }
     }catch(err){ if(String(err).indexOf('Abort')<0) flash('書き出しを中止しました'); }
   };
@@ -313,13 +428,13 @@ function App(){
       </div>
 
       <div className="flex-1 overflow-hidden">
-        {tab==='cap' && <Capture sites={sites} site={site} setSite={setSite} wt={wt} setWt={setWt} onShot={reload} todayCount={todayCount}/>}
-        {tab==='find'&& <Find photos={photos} reload={reload} onExport={exportPhotos}/>}
-        {tab==='site'&& <Sites sites={sites} setSites={setSites}/>}
+        {tab==='cap' && <Capture sites={sites} site={site} setSite={setSite} wtList={wtList} wt={wt} setWt={setWt} onShot={reload} todayCount={todayCount} goSite={()=>setTab('set')}/>}
+        {tab==='find'&& <Find photos={photos} reload={reload} onExport={exportPhotos} fmt={fmt} wtList={wtList}/>}
+        {tab==='set' && <Settings sites={sites} setSites={setSites} wtList={wtList} setWtList={setWtList} fmt={fmt} setFmt={setFmt} photos={photos} reload={reload} flash={flash}/>}
       </div>
 
       <div className="bg-navy border-t border-white/10 flex">
-        {[['cap','📷','撮影'],['find','🔍','探す'],['site','📍','現場']].map(arr=>{
+        {[['cap','📷','撮影'],['find','🔍','探す'],['set','⚙️','設定']].map(arr=>{
           const id=arr[0],ic=arr[1],lb=arr[2],on=tab===id;
           return <button key={id} onClick={()=>setTab(id)} className={"tap flex-1 flex flex-col items-center gap-0.5 py-2.5 "+(on?'text-amber':'text-white/50')}>
             <span className="text-2xl leading-none">{ic}</span><span className="text-[11px] font-bold">{lb}</span>
