@@ -323,6 +323,18 @@ function SwipeRow({children,onDelete}){
   </div>;
 }
 
+/* ============ 設定セクションの枠（関数の外で定義＝再生成されない） ============ */
+function Sec({title,children,right}){
+  return (
+    <div className="bg-card rounded-2xl shadow-soft overflow-hidden">
+      <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
+        <div className="text-ink font-bold text-[15px]">{title}</div>{right}
+      </div>
+      <div className="px-4 pb-4">{children}</div>
+    </div>
+  );
+}
+
 /* ============ ドラッグで並べ替えできるリスト（タッチ対応） ============ */
 function DragList({items,onReorder,rowHeight,renderRow}){
   const [drag,setDrag]=useState(-1);      /* つかんでいる元の index */
@@ -413,15 +425,6 @@ function Settings({sites,setSites,cats,setCats,useSub,setUseSub,photos,reload,fl
     if(confirm('保存済みの写真 '+expCount+'枚 をアプリから削除します。\n（端末の写真アプリ側は消えません）')){
       await dbDelMany(photos.filter(p=>p.exported).map(p=>p.id));await reload();flash(expCount+'枚 削除しました');}
   };
-
-  const Sec=({title,children,right})=>(
-    <div className="bg-card rounded-2xl shadow-soft overflow-hidden">
-      <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
-        <div className="text-ink font-bold text-[15px]">{title}</div>{right}
-      </div>
-      <div className="px-4 pb-4">{children}</div>
-    </div>
-  );
 
   return (
     <div className="p-4 space-y-3.5 overflow-y-auto h-full bg-bg">
