@@ -215,12 +215,16 @@ function Capture({sites,site,setSite,cats,cat,setCat,sub,setSub,useSub,onShot,to
   );
 }
 
-/* ============ 写真一覧（横スワイプ閲覧＋スワイプ削除） ============ */
-function Gallery({photos,reload,onExport,cats,onOpen}){
+/* ============ 写真一覧（横スワイプ閲覧＋複数選択して一括削除） ============ */
+function Gallery({photos,reload,onExport,cats,onOpen,flash}){
   const [site,setSite]=useState(null);
   const [cat,setCat]=useState(null);
+  const [selMode,setSelMode]=useState(false);     /* 選択モードかどうか */
+  const [picked,setPicked]=useState(()=>new Set()); /* 選んだ写真のidの集合 */
   const sites=Array.from(new Set(photos.map(p=>p.site)));
   useEffect(()=>{ if(sites.length&&(site===null||sites.indexOf(site)<0)){setSite(sites[0]);setCat(null);} },[photos]);
+  /* 現場や絞り込みを変えたら選択はリセット */
+  useEffect(()=>{ setSelMode(false); setPicked(new Set()); },[site,cat]);
 
   if(!photos.length) return <div className="flex flex-col items-center justify-center h-full px-10 text-center">
     <div className="w-16 h-16 rounded-2xl bg-ink/5 text-ink/40 flex items-center justify-center mb-5"><Ic.grid style={{width:30,height:30}}/></div>
@@ -233,6 +237,22 @@ function Gallery({photos,reload,onExport,cats,onOpen}){
   const shown=(cat?sp.filter(p=>p.cat===cat):sp).sort((a,b)=>b.ts-a.ts);
   const unexp=shown.filter(p=>!p.exported).length;
 
+  const exitSel=()=>{ setSelMode(false); setPicked(new Set()); };
+  const toggle=id=>{ const n=new Set(picked); n.has(id)?n.delete(id):n.add(id); setPicked(n); };
+  const allPicked=shown.length>0 && shown.every(p=>picked.has(p.id));
+  const toggleAll=()=>{ setPicked(allPicked?new Set():new Set(shown.map(p=>p.id))); };
+  const onTapPhoto=(p,idx)=>{ if(selMode){ toggle(p.id); } else { onOpen(shown,idx); } };
+
+  const delPicked=async()=>{
+    const ids=shown.filter(p=>picked.has(p.id)).map(p=>p.id);
+    if(!ids.length)return;
+    if(confirm('選択した写真 '+ids.length+'枚 を削除します。\n（端末の写真アプリやドライブに保存済みのものは消えません）')){
+      await dbDelMany(ids); await reload();
+      flash && flash(ids.length+'枚 削除しました');
+      exitSel();
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-bg">
       <div className="scroll-x overflow-x-auto flex gap-2 px-4 pt-3 pb-2">
@@ -243,21 +263,53 @@ function Gallery({photos,reload,onExport,cats,onOpen}){
         <button onClick={()=>setCat(null)} className={"tap shrink-0 rounded-full px-3.5 py-1.5 text-[13px] border "+(!cat?'bg-amber/15 text-ink border-amber/50 font-semibold':'bg-card text-sub border-line')}>すべて</button>
         {catsInSite.map(c=>{const on=c===cat;return <button key={c} onClick={()=>setCat(c)} className={"tap shrink-0 rounded-full px-3.5 py-1.5 text-[13px] border "+(on?'bg-amber/15 text-ink border-amber/50 font-semibold':'bg-card text-sub border-line')}>{c}</button>;})}
       </div>
-      <div className="px-4 pb-2.5 flex items-center justify-between">
-        <span className="text-sub text-[13px]">{shown.length}枚{unexp>0 && <span className="text-amber font-semibold">・未保存 {unexp}</span>}</span>
-        <button onClick={()=>onExport(shown)} className="tap inline-flex items-center gap-1.5 bg-brand text-white text-[13px] font-bold pl-3 pr-3.5 py-2 rounded-full shadow-soft">
-          <Ic.share style={{width:15,height:15}}/> データを保存
-        </button>
-      </div>
+
+      {/* 操作バー：通常時と選択時で切り替え */}
+      {!selMode ? (
+        <div className="px-4 pb-2.5 flex items-center justify-between gap-2">
+          <span className="text-sub text-[13px] shrink-0">{shown.length}枚{unexp>0 && <span className="text-amber font-semibold">・未保存 {unexp}</span>}</span>
+          <div className="flex items-center gap-2">
+            <button onClick={()=>{setSelMode(true);setPicked(new Set());}} className="tap inline-flex items-center gap-1.5 bg-card border border-line text-ink text-[13px] font-bold px-3.5 py-2 rounded-full">
+              <Ic.check style={{width:15,height:15}}/> 選択
+            </button>
+            <button onClick={()=>onExport(shown)} className="tap inline-flex items-center gap-1.5 bg-brand text-white text-[13px] font-bold pl-3 pr-3.5 py-2 rounded-full shadow-soft">
+              <Ic.share style={{width:15,height:15}}/> データを保存
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="px-4 pb-2.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={exitSel} className="tap text-sub text-[13px] font-semibold px-1">キャンセル</button>
+            <span className="text-ink text-[13px] font-bold">{picked.size}枚 選択中</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={toggleAll} className="tap bg-card border border-line text-ink text-[13px] font-bold px-3 py-2 rounded-full">
+              {allPicked?'選択を解除':'すべて選択'}
+            </button>
+            <button onClick={delPicked} disabled={!picked.size}
+              className="tap inline-flex items-center gap-1.5 bg-danger text-white text-[13px] font-bold pl-3 pr-3.5 py-2 rounded-full shadow-soft disabled:opacity-40">
+              <Ic.trash style={{width:15,height:15}}/> 削除{picked.size>0?'（'+picked.size+'）':''}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto px-1 pb-4">
         <div className="grid grid-cols-3 gap-[3px]">
-          {shown.map((p,idx)=>(
-            <button key={p.id} onClick={()=>onOpen(shown,idx)} className="relative block bg-line/40 overflow-hidden">
+          {shown.map((p,idx)=>{const on=picked.has(p.id);return (
+            <button key={p.id} onClick={()=>onTapPhoto(p,idx)} className="relative block bg-line/40 overflow-hidden">
               <img src={p.img} className="w-full aspect-square object-cover"/>
-              {!p.exported && <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-amber ring-2 ring-white/70"></span>}
-              {p.exported && <span className="absolute top-1 left-1 text-white bg-ok/90 rounded-full p-0.5"><Ic.check style={{width:11,height:11}} w={3}/></span>}
+              {/* 通常時の保存状態の印（選択モード中は隠す） */}
+              {!selMode && !p.exported && <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-amber ring-2 ring-white/70"></span>}
+              {!selMode && p.exported && <span className="absolute top-1 left-1 text-white bg-ok/90 rounded-full p-0.5"><Ic.check style={{width:11,height:11}} w={3}/></span>}
+              {/* 選択モード中：チェックの丸 */}
+              {selMode && <span className="absolute inset-0 bg-black/0 transition-colors" style={{background:on?'rgba(15,42,67,.35)':'transparent'}}></span>}
+              {selMode && <span className={"absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center border-2 "+(on?'bg-brand border-white text-white':'bg-black/25 border-white/90 text-transparent')}>
+                <Ic.check style={{width:14,height:14}} w={3}/>
+              </span>}
             </button>
-          ))}
+          );})}
         </div>
       </div>
     </div>
@@ -611,7 +663,7 @@ function App(){
       </div>
       <div className="flex-1 overflow-hidden">
         {tab==='cap' && <Capture sites={sites} site={site} setSite={setSite} cats={cats} cat={cat} setCat={setCat} sub={sub} setSub={setSub} useSub={useSub} onShot={reload} todayCount={todayCount} goSet={()=>setTab('set')}/>}
-        {tab==='gal' && <Gallery photos={photos} reload={reload} onExport={exportPhotos} cats={cats} onOpen={openViewer}/>}
+        {tab==='gal' && <Gallery photos={photos} reload={reload} onExport={exportPhotos} cats={cats} onOpen={openViewer} flash={flash}/>}
         {tab==='set' && <Settings sites={sites} setSites={setSites} cats={cats} setCats={setCats} useSub={useSub} setUseSub={setUseSub} photos={photos} reload={reload} flash={flash}/>}
       </div>
       <div className="bg-card/95 backdrop-blur border-t border-line flex">
