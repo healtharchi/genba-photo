@@ -18,7 +18,7 @@
 <title>HEALTH ARCHI 現場写真管理</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = { theme: { extend: {
@@ -54,7 +54,7 @@
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel">
+<script type="text/plain" id="app-source">
 const { useState, useEffect, useRef, useCallback } = React;
 
 /* ===== アイコン（線画SVG・統一）===== */
@@ -685,6 +685,13 @@ function App(){
   );
 }
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+<script>
+(function () {
+  var src = document.getElementById('app-source').textContent;
+  var code = Babel.transform(src, { presets: [['react', { runtime: 'classic' }]] }).code;
+  (0, eval)(code);
+})();
 </script>
 <!-- HEALTH ARCHI 共通フッター（実験室・LINE導線） -->
 <footer style="background:#1B2B4B;color:#FFFFFF;text-align:center;padding:24px 16px;font-family:'Noto Sans JP','Hiragino Sans','Yu Gothic UI','Meiryo',sans-serif;font-size:15px;line-height:2;">
